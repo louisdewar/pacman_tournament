@@ -1,0 +1,38 @@
+{
+  "map": [
+    [
+      {
+        "base": "L",
+        "player": {
+          "health": 1,
+          "current": false,
+          "direction": "N",
+          "apples": 0,
+          "invulnerable": false
+        }
+      },
+      { "base": "W" },
+      { "base": "L" },
+      { "base": "L" }
+    ],
+    [
+      {
+        "base": "L",
+        "mob": { "direction": "N" }
+      },
+      { "base": "L" },
+      {
+        "base": "L",
+        "player": {
+          "health": 2,
+          "direction": "N",
+          "current": true,
+          "invulnerable": false,
+          "apples": 0
+        }
+      },
+      { "base": "L" }
+    ],
+    [{ "base": "W" }, { "base": "L" }, { "base": "L" }, { "base": "L" }]
+  ]
+}
