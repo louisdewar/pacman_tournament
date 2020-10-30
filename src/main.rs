@@ -20,7 +20,11 @@ use bucket::Bucket;
 mod network;
 use network::{GameMessage, NetworkManager, NetworkMessage};
 
+mod animation;
+use animation::Animation;
+
 use std::sync::mpsc::{Receiver, Sender};
+use std::time::Instant;
 
 struct Game {
     map: Map,
@@ -33,7 +37,7 @@ struct Game {
     rx: Receiver<NetworkMessage>,
     tx: Sender<GameMessage>,
     spawning_players: Vec<(String, usize)>,
-    respawn_queue: Vec<usize>,
+    tick_start: Instant,
 }
 
 fn load_sprite<P: AsRef<std::path::Path>>(ctx: &mut Context, path: P) -> SpriteBatch {
@@ -59,7 +63,7 @@ impl Game {
             rx,
             tx,
             spawning_players: Vec::new(),
-            respawn_queue: Vec::new(),
+            tick_start: Instant::now(),
         }
     }
 
@@ -247,11 +251,11 @@ impl Game {
                 victim_entity.deal_damage(2);
             }
         } else {
-            *victim_entity.position_mut() = victim;
+            victim_entity.set_pos(victim, true);
             if !victim_entity.is_invulnerable() {
                 victim_entity.deal_damage(1);
             }
-            *attacker_entity.position_mut() = old_victim;
+            attacker_entity.set_pos(old_victim, true);
             drop(victim_entity);
             drop(attacker_entity);
 
@@ -270,6 +274,9 @@ impl Game {
     ///     3. South facing
     ///     4. West facing
     fn tick(&mut self) {
+        self.tick += 1;
+        self.tick_start = Instant::now();
+
         for i in 0..self.mobs.max_id() {
             if let Some(mob) = self.mobs.get(i) {
                 let old_pos = mob.borrow().position();
@@ -291,7 +298,7 @@ impl Game {
                             [self.map.flatten_coordinate(new_x as usize, new_y as usize)]
                         {
                             if entity_index.entity_type().is_mob() {
-                                *mob.borrow_mut().direction_mut() = direction.clockwise();
+                                mob.borrow_mut().turn(direction.clockwise(), true);
                             } else {
                                 drop(mob);
                                 self.attack(old_pos, (new_x, new_y), direction);
@@ -303,13 +310,13 @@ impl Game {
                                 old_pos,
                                 (new_x, new_y),
                             );
-                            *mob.borrow_mut().position_mut() = (new_x, new_y);
+                            mob.borrow_mut().set_pos((new_x, new_y), true);
                         }
                     } else {
-                        *mob.borrow_mut().direction_mut() = direction.clockwise();
+                        mob.borrow_mut().turn(direction.clockwise(), true);
                     }
                 } else {
-                    *mob.borrow_mut().direction_mut() = direction.clockwise();
+                    mob.borrow_mut().turn(direction.clockwise(), true);
                 }
             }
         }
@@ -351,12 +358,8 @@ impl Game {
 
                 match action {
                     Action::Stay => {}
-                    Action::TurnLeft => {
-                        *player.borrow_mut().direction_mut() = direction.anti_clockwise()
-                    }
-                    Action::TurnRight => {
-                        *player.borrow_mut().direction_mut() = direction.clockwise()
-                    }
+                    Action::TurnLeft => player.borrow_mut().turn(direction.anti_clockwise(), true),
+                    Action::TurnRight => player.borrow_mut().turn(direction.clockwise(), true),
                     Action::Eat => unimplemented!(),
                     Action::Forward => {
                         use Direction::*;
@@ -404,7 +407,7 @@ impl Game {
                                 old_pos,
                                 (new_x, new_y),
                             );
-                            *player.borrow_mut().position_mut() = (new_x, new_y);
+                            player.borrow_mut().set_pos((new_x, new_y), true);
                         }
                     }
                 }
@@ -435,6 +438,7 @@ impl Game {
                 entities: self.entities.clone(),
                 players: self.players.clone(),
                 mobs: self.mobs.clone(),
+                tick: self.tick,
             })
             .expect("Couldn't communicate with network manager");
     }
@@ -442,11 +446,20 @@ impl Game {
     fn handle_network_messages(&mut self) {
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
-                NetworkMessage::ClientConnect { temporary_id } => {
-                    self.spawning_players
-                        .push((String::from("todo: username"), temporary_id));
+                NetworkMessage::ClientConnect {
+                    temporary_id,
+                    username,
+                } => {
+                    self.spawning_players.push((username, temporary_id));
                 }
-                NetworkMessage::PlayerAction { id, action } => {
+                NetworkMessage::PlayerAction { id, action, tick } => {
+                    if self.tick != tick {
+                        println!(
+                            "Player sent action for tick {} when it was tick {}",
+                            tick, self.tick
+                        );
+                        continue;
+                    }
                     if let Some(player) = self.players.get(id) {
                         let next_action = &mut player.borrow_mut().next_action;
 
@@ -493,11 +506,12 @@ impl EventHandler for Game {
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         graphics::clear(ctx, [0.5, 0.5, 0.5, 1.0].into());
+        let cur_time = self.tick_start.elapsed().as_secs_f32();
         let square_width = 15.0;
         let mesh = self.build_terrain_mesh(square_width).build(ctx)?;
 
         for (_index, player) in self.players.iter() {
-            let (x, y) = player.borrow().position();
+            let (x, y) = player.borrow_mut().position_animated(cur_time);
             let param = graphics::DrawParam::new()
                 .offset([0.5, 0.5])
                 .dest([
@@ -511,7 +525,7 @@ impl EventHandler for Game {
         }
 
         for (_index, mob) in self.mobs.iter() {
-            let (x, y) = mob.borrow().position();
+            let (x, y) = mob.borrow_mut().position_animated(cur_time);
             let param = graphics::DrawParam::new()
                 .offset([0.5, 0.5])
                 .dest([

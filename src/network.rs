@@ -9,10 +9,90 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Action, BaseTile, Bucket, Direction, Entity, EntityIndex, Map, Mob, Player};
 
+struct Connection {
+    stream: TcpStream,
+    buf: [u8; 1024],
+    buf_len: usize,
+}
+
+impl Connection {
+    fn next_message<T: serde::de::DeserializeOwned>(
+        &mut self,
+        player_id: String,
+    ) -> Result<Option<T>, ()> {
+        use std::io::{ErrorKind, Read};
+        let mut msg_end = None;
+        for (i, byte) in self.buf.iter().enumerate() {
+            if *byte == b'\n' {
+                msg_end = Some(i);
+                break;
+            }
+        }
+
+        if let Some(end_index) = msg_end {
+            let mut new_buf = [0_u8; 1024];
+            &mut new_buf[0..(self.buf_len - end_index - 1)]
+                .copy_from_slice(&self.buf[end_index + 1..self.buf_len]);
+            std::mem::swap(&mut self.buf, &mut new_buf);
+            self.buf_len -= end_index + 1;
+            match serde_json::from_slice::<T>(&new_buf[0..end_index]) {
+                Ok(value) => {
+                    return Ok(Some(value));
+                }
+                Err(_err) => {
+                    println!(
+                        "Player {} sent malformatted message `{}`",
+                        player_id,
+                        String::from_utf8_lossy(&new_buf[0..end_index])
+                    );
+                }
+            }
+        } else {
+            if self.buf_len == 1024 {
+                // Message is over 1024 bytes (no \n found) it is probably malformatted so drop
+                // it
+                self.buf = [0; 1024];
+                self.buf_len = 0;
+                println!(
+                    "Player {} filled the message buffer without a complete message (`{}`)",
+                    player_id,
+                    String::from_utf8_lossy(&self.buf)
+                );
+            }
+            match self.stream.read(&mut self.buf[self.buf_len..]) {
+                Ok(n_read) => {
+                    if n_read == 0 {
+                        return Err(());
+                    }
+
+                    self.buf_len += n_read;
+                }
+                Err(err) if err.kind() == ErrorKind::WouldBlock => {}
+                Err(err) => {
+                    println!("Error reading from socket of player {}: {}", player_id, err);
+                    return Err(());
+                }
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+impl From<TcpStream> for Connection {
+    fn from(stream: TcpStream) -> Connection {
+        Connection {
+            stream,
+            buf: [0; 1024],
+            buf_len: 0,
+        }
+    }
+}
+
 pub struct NetworkManager {
     listener: TcpListener,
-    clients: HashMap<usize, TcpStream>,
-    unallocated_clients: Bucket<TcpStream>,
+    clients: HashMap<usize, Connection>,
+    unallocated_clients: Bucket<Connection>,
     tx: Sender<NetworkMessage>,
     rx: Receiver<GameMessage>,
 }
@@ -49,71 +129,57 @@ impl NetworkManager {
             stream
                 .set_nonblocking(true)
                 .expect("Couldn't set non-blocking on TCP connection");
-            let temporary_id = self.unallocated_clients.add(stream);
-            self.tx
-                .send(NetworkMessage::ClientConnect { temporary_id })
-                .expect("Transmitter error");
+            self.unallocated_clients.add(stream.into());
         }
     }
 
     fn handle_incoming_data(&mut self) {
-        use std::io::{ErrorKind, Read};
-        let mut to_remove = Vec::new();
-        for (player_id, stream) in self.clients.iter_mut() {
-            let mut buf = [0_u8; 512];
-            match stream.read(&mut buf) {
-                Ok(n_read) => {
-                    if n_read == 0 {
-                        to_remove.push(*player_id);
-                        continue;
-                    }
+        let mut clients_to_remove = Vec::new();
+        let mut unallocated_to_remove = Vec::new();
 
-                    // if buf[1] != b'\n' {
-                    //     println!(
-                    //         "Invalid message format (newline) `{}` from {}",
-                    //         String::from_utf8_lossy(&buf[0..n_read]),
-                    //         player_id
-                    //     );
-                    //     continue;
-                    // }
-
-                    let action = match buf[0] {
-                        b'F' => Action::Forward,
-                        b'L' => Action::TurnLeft,
-                        b'R' => Action::TurnRight,
-                        b'E' => Action::Eat,
-                        b'S' => Action::Stay,
-                        _ => {
-                            println!(
-                                "Invalid message char `{}` from {}",
-                                String::from_utf8_lossy(&buf[0..n_read]),
-                                player_id
-                            );
-                            continue;
-                        }
-                    };
-
+        for (player_id, conn) in self.clients.iter_mut() {
+            match conn.next_message::<ActionMessage>(format!("{}", player_id)) {
+                Ok(Some(msg)) => {
                     self.tx
                         .send(NetworkMessage::PlayerAction {
                             id: *player_id,
-                            action,
+                            action: msg.action,
+                            tick: msg.tick,
                         })
                         .unwrap();
                 }
-                Err(err) if err.kind() == ErrorKind::WouldBlock => {}
-                Err(err) => {
-                    println!("Error reading from socket of player {}: {}", player_id, err);
-                    to_remove.push(*player_id);
-                }
+                Ok(None) => {}
+                Err(_) => clients_to_remove.push(*player_id),
             }
         }
 
-        for id in to_remove {
+        for (temporary_id, conn) in self.unallocated_clients.iter_mut() {
+            match conn.next_message::<ClientConnectMessage>(format!("[temp_id] {}", temporary_id)) {
+                Ok(Some(msg)) => {
+                    dbg!();
+                    self.tx
+                        .send(NetworkMessage::ClientConnect {
+                            temporary_id: *temporary_id,
+                            username: msg.username,
+                        })
+                        .expect("Transmitter error");
+                }
+                Ok(None) => {}
+                Err(_) => unallocated_to_remove.push(*temporary_id),
+            }
+        }
+
+        for id in clients_to_remove {
             println!("Disconnecting {}", id);
             self.tx
                 .send(NetworkMessage::ClientDisconnect { id })
                 .unwrap();
             self.clients.remove(&id);
+        }
+
+        for id in unallocated_to_remove {
+            println!("Disconnecting temp user {}", id);
+            self.unallocated_clients.remove(id);
         }
     }
 
@@ -133,6 +199,7 @@ impl NetworkManager {
                     entities,
                     players,
                     mobs,
+                    tick,
                 } => {
                     for (player_id, player) in players.iter() {
                         let player = player.borrow();
@@ -203,11 +270,15 @@ impl NetworkManager {
                             [c(1, 2), c(1, 1), c(1, 0), c(1, -1)],
                         ];
 
-                        if let Some(mut stream) = self.clients.get_mut(player_id) {
-                            if let Err(e) = serde_json::to_writer(&mut stream, &view) {
+                        if let Some(conn) = self.clients.get_mut(player_id) {
+                            let tick_msg = TickMessage { view, tick };
+                            let mut msg = serde_json::to_string(&tick_msg)
+                                .expect("Couldn't serialize message");
+                            msg.push('\n');
+
+                            if let Err(e) = conn.stream.write(&msg.as_bytes()) {
                                 println!("Failed to serialize: {}", e);
                             }
-                            let _ = stream.write(b"\n");
                         } else {
                             println!(
                                 "Player id {} didn't have a stream but was in the update tick",
@@ -220,13 +291,13 @@ impl NetworkManager {
                     player_id,
                     final_score,
                 } => {
-                    let mut stream = self.clients.remove(&player_id).unwrap();
+                    let mut conn = self.clients.remove(&player_id).unwrap();
                     if let Err(e) =
-                        serde_json::to_writer(&mut stream, &PlayerDiedMessage { final_score })
+                        serde_json::to_writer(&mut conn.stream, &PlayerDiedMessage { final_score })
                     {
                         println!("Failed to serialize: {}", e);
                     }
-                    let _ = stream.write(b"\n");
+                    let _ = conn.stream.write(b"\n");
                     println!(
                         "Player {} disconnected with final score {}",
                         player_id, final_score
@@ -266,8 +337,25 @@ struct TileView {
 }
 
 #[derive(Serialize)]
+struct TickMessage {
+    view: [[TileView; 4]; 3],
+    tick: u32,
+}
+
+#[derive(Serialize)]
 struct PlayerDiedMessage {
     final_score: usize,
+}
+
+#[derive(Deserialize)]
+struct ActionMessage {
+    tick: u32,
+    action: Action,
+}
+
+#[derive(Deserialize)]
+struct ClientConnectMessage {
+    username: String,
 }
 
 pub enum GameMessage {
@@ -280,6 +368,7 @@ pub enum GameMessage {
         entities: Vec<Option<EntityIndex>>,
         players: Bucket<RefCell<Player>>,
         mobs: Bucket<RefCell<Mob>>,
+        tick: u32,
     },
     PlayerDied {
         player_id: usize,
@@ -288,7 +377,16 @@ pub enum GameMessage {
 }
 
 pub enum NetworkMessage {
-    ClientConnect { temporary_id: usize },
-    ClientDisconnect { id: usize },
-    PlayerAction { id: usize, action: Action },
+    ClientConnect {
+        temporary_id: usize,
+        username: String,
+    },
+    ClientDisconnect {
+        id: usize,
+    },
+    PlayerAction {
+        id: usize,
+        action: Action,
+        tick: u32,
+    },
 }

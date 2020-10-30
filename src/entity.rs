@@ -1,4 +1,5 @@
-use serde::Serialize;
+use crate::Animation;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Copy, Serialize)]
 pub enum Direction {
@@ -80,19 +81,26 @@ impl std::ops::Add<Direction> for Direction {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum Action {
+    #[serde(rename(deserialize = "F"))]
     Forward,
+    #[serde(rename(deserialize = "S"))]
     Stay,
+    #[serde(rename(deserialize = "L"))]
     TurnLeft,
+    #[serde(rename(deserialize = "R"))]
     TurnRight,
+    #[serde(rename(deserialize = "E"))]
     Eat,
 }
 
 #[derive(Clone, Debug)]
 pub struct Player {
     pos: (u16, u16),
+    pos_animation: (Animation, Animation),
     direction: Direction,
+    direction_animation: Animation,
     health: u8,
     invulnerable_turns: u8,
     apple_count: u8,
@@ -120,6 +128,8 @@ impl Player {
             score: 0,
             username,
             next_action,
+            pos_animation: Default::default(),
+            direction_animation: Default::default(),
         }
     }
 
@@ -143,7 +153,9 @@ impl Player {
 #[derive(Clone, Debug)]
 pub struct Mob {
     pos: (u16, u16),
+    pos_animation: (Animation, Animation),
     direction: Direction,
+    direction_animation: Animation,
     is_dead: bool,
 }
 
@@ -153,16 +165,20 @@ impl Mob {
             pos,
             direction,
             is_dead,
+            pos_animation: Default::default(),
+            direction_animation: Default::default(),
         }
     }
 }
 
 pub trait Entity {
     fn position(&self) -> (u16, u16);
-    fn position_mut(&mut self) -> &mut (u16, u16);
+    fn set_pos(&mut self, new_pos: (u16, u16), animated: bool);
+    fn position_animated(&mut self, cur_time: f32) -> (f32, f32);
 
     fn direction(&self) -> Direction;
-    fn direction_mut(&mut self) -> &mut Direction;
+    fn turn(&mut self, direction: Direction, animated: bool);
+    fn direction_animated(&mut self, cur_time: f32) -> f32;
 
     fn deal_damage(&mut self, damage: u8);
     fn kill(&mut self);
@@ -182,16 +198,41 @@ impl Entity for Player {
         self.pos
     }
 
-    fn position_mut(&mut self) -> &mut (u16, u16) {
-        &mut self.pos
+    fn position_animated(&mut self, cur_time: f32) -> (f32, f32) {
+        (
+            self.pos.0 as f32 + self.pos_animation.0.current_delta(cur_time),
+            self.pos.1 as f32 + self.pos_animation.1.current_delta(cur_time),
+        )
+    }
+
+    fn set_pos(&mut self, new_pos: (u16, u16), animated: bool) {
+        if animated {
+            let new_x = new_pos.0 as f32;
+            let new_y = new_pos.1 as f32;
+
+            let old_x = self.pos.0 as f32;
+            let old_y = self.pos.1 as f32;
+
+            let delta = (old_x - new_x, old_y - new_y);
+            self.pos_animation = (
+                Animation::new(0.4, 0.4, delta.0, 0.0),
+                Animation::new(0.4, 0.4, delta.1, 0.0),
+            );
+        }
+        self.pos = new_pos;
     }
 
     fn direction(&self) -> Direction {
         self.direction
     }
 
-    fn direction_mut(&mut self) -> &mut Direction {
-        &mut self.direction
+    fn direction_animated(&mut self, cur_time: f32) -> f32 {
+        todo!();
+    }
+
+    fn turn(&mut self, direction: Direction, animated: bool) {
+        // TODO: Setup animation
+        self.direction = direction;
     }
 
     fn deal_damage(&mut self, damage: u8) {
@@ -216,16 +257,42 @@ impl Entity for Mob {
         self.pos
     }
 
-    fn position_mut(&mut self) -> &mut (u16, u16) {
-        &mut self.pos
+    fn position_animated(&mut self, cur_time: f32) -> (f32, f32) {
+        (
+            self.pos.0 as f32 + self.pos_animation.0.current_delta(cur_time),
+            self.pos.1 as f32 + self.pos_animation.1.current_delta(cur_time),
+        )
+    }
+
+    fn set_pos(&mut self, new_pos: (u16, u16), animated: bool) {
+        if animated {
+            let new_x = new_pos.0 as f32;
+            let new_y = new_pos.1 as f32;
+
+            let old_x = self.pos.0 as f32;
+            let old_y = self.pos.1 as f32;
+
+            let delta = (old_x - new_x, old_y - new_y);
+            self.pos_animation = (
+                Animation::new(0.4, 0.4, delta.0, 0.0),
+                Animation::new(0.4, 0.4, delta.1, 0.0),
+            );
+        }
+
+        self.pos = new_pos;
     }
 
     fn direction(&self) -> Direction {
         self.direction
     }
 
-    fn direction_mut(&mut self) -> &mut Direction {
-        &mut self.direction
+    fn direction_animated(&mut self, cur_time: f32) -> f32 {
+        todo!();
+    }
+
+    fn turn(&mut self, direction: Direction, animated: bool) {
+        // TODO: Setup animation
+        self.direction = direction;
     }
 
     fn deal_damage(&mut self, damage: u8) {

@@ -1,14 +1,12 @@
 import socket
 import json
+import sys
 
 class Ai:
-    def __init__(self, address, port):
-        # self.sock = socket.socket()
-#            socket.AF_INET,
-#            socket.SOCK_STREAM | socket.SOCK_NONBLOCK)
-
+    def __init__(self, address, port, username):
         print('Connecting to {}:{}'.format(address, port))
         self.sock = socket.create_connection((address, port))
+        self.sock.send(bytes(json.dumps({ 'username': username }) + '\n', 'utf-8'))
 
     def start(self):
         buf = ''
@@ -24,9 +22,9 @@ class Ai:
                         print('You died your final score was', data['final_score'])
                         return
 
-                    action = self.choose_action(data)
-                    print('Playing action', action)
-                    self.sock.send(bytes(action, 'utf-8'))
+                    action = self.choose_action(data['view'])
+                    print('Playing action', action, 'on tick', data['tick'])
+                    self.sock.send(bytes(json.dumps({ 'tick': data['tick'], 'action': action }) + '\n', 'utf-8'))
                 except json.decoder.JSONDecodeError:
                     print('msg `%s` from the server was invalid json' % msg)
             else:
@@ -50,11 +48,21 @@ class Ai:
                 print(' {}{} '.format(game[x][y]['base'], entity), end='')
             print('')
         print('----' * 3)
+        print(game[2][1])
+
+        if game[2][1]['base'] == 'X':
+            return 'R'
 
         return 'F'
 
 
 if __name__ =='__main__':
-    ai = Ai('localhost', 2010)
+    try:
+        ip = sys.argv[1]
+        port = sys.argv[2]
+        username = sys.argv[3]
+    except IndexError:
+        print("Usage: python3 shim.py [ip] [port] [username]")
+    ai = Ai(ip, port, username)
 
     ai.start()
