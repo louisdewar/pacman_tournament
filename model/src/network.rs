@@ -7,7 +7,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Action, BaseTile, Bucket, Direction, Entity, EntityIndex, Map, Mob, Player};
+use crate::{Action, BaseTile, Bucket, Direction, Entity, EntityIndex, Grid, Map, Mob, Player};
 
 struct Connection {
     stream: TcpStream,
@@ -233,10 +233,10 @@ impl NetworkManager {
                             let (x, y) = (new_x as u16, new_y as u16);
 
                             let (mob, player) = if let Some(entity_index) =
-                                &entities[map.flatten_coordinate(x as usize, y as usize)]
+                                &entities[x as usize][y as usize]
                             {
                                 use crate::entity::EntityType;
-                                match entity_index.entity_type {
+                                match entity_index.entity_type() {
                                     EntityType::Mob => (
                                         Some(mobs.get(entity_index.index).unwrap().borrow().into()),
                                         None,
@@ -365,7 +365,7 @@ pub enum GameMessage {
     },
     ProcessTick {
         map: Map,
-        entities: Vec<Option<EntityIndex>>,
+        entities: Grid<Option<EntityIndex>>,
         players: Bucket<RefCell<Player>>,
         mobs: Bucket<RefCell<Mob>>,
         tick: u32,

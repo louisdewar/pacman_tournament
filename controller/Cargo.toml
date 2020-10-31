@@ -1,0 +1,9 @@
+[package]
+name = "controller"
+version = "0.1.0"
+authors = ["louisdewardt <contact@louis.dewardt.uk>"]
+edition = "2018"
+
+[dependencies]
+model = { path = "../model" } 
+ggez = "0.5"

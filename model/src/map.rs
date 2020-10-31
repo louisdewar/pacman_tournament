@@ -66,6 +66,14 @@ impl Map {
     pub fn base_tile(&self, x: usize, y: usize) -> &BaseTile {
         &self.base_tile[self.flatten_coordinate(x, y)]
     }
+
+    pub fn width(&self) -> usize {
+        self.width as usize
+    }
+
+    pub fn height(&self) -> usize {
+        self.height as usize
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -78,15 +86,15 @@ pub enum BaseTile {
     Wall,
 }
 
-impl BaseTile {
-    pub fn texture(&self) -> ggez::graphics::Color {
-        match &self {
-            BaseTile::Water => (0.0, 0.0, 1.0).into(),
-            BaseTile::Land => (0.0, 1.0, 0.0).into(),
-            BaseTile::Wall => (0.2, 0.2, 0.2).into(),
-        }
-    }
-}
+// impl BaseTile {
+//     pub fn texture(&self) -> ggez::graphics::Color {
+//         match &self {
+//             BaseTile::Water => (0.0, 0.0, 1.0).into(),
+//             BaseTile::Land => (0.0, 1.0, 0.0).into(),
+//             BaseTile::Wall => (0.2, 0.2, 0.2).into(),
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug)]
 pub enum SpawnLocation {

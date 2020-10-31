@@ -48,10 +48,9 @@ class Ai:
                 print(' {}{} '.format(game[x][y]['base'], entity), end='')
             print('')
         print('----' * 3)
-        print(game[2][1])
 
-        if game[2][1]['base'] == 'X':
-            return 'R'
+        if game[1][1]['base'] != 'L':
+            return 'S'
 
         return 'F'
 
