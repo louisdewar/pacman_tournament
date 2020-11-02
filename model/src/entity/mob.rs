@@ -1,6 +1,6 @@
 use crate::{
-    Action, Animation, BaseTile, Direction, Entity, EntityIndex, EntityType, Food, Grid, Map,
-    MobBucket, PlayerBucket,
+    Animation, BaseTile, Direction, Entity, EntityIndex, EntityType, Food, Grid, Map, MobBucket,
+    PlayerBucket,
 };
 
 #[derive(Clone, Debug)]
@@ -58,11 +58,11 @@ impl Entity for Mob {
         self.direction
     }
 
-    fn direction_animated(&mut self, cur_time: f32) -> f32 {
+    fn direction_animated(&mut self, _cur_time: f32) -> f32 {
         todo!();
     }
 
-    fn turn(&mut self, direction: Direction, animated: bool) {
+    fn turn(&mut self, direction: Direction, _animated: bool) {
         // TODO: Setup animation
         self.direction = direction;
     }
@@ -76,6 +76,7 @@ impl Entity for Mob {
     fn process_turn(
         &mut self,
         entities: &mut Grid<Option<EntityIndex>>,
+        _food: &mut Grid<Option<Food>>,
         _mobs: &MobBucket,
         players: &PlayerBucket,
         map: &Map,

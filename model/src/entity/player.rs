@@ -1,6 +1,6 @@
 use crate::{
-    Action, Animation, BaseTile, Direction, Entity, EntityIndex, EntityType, Food, Grid, Map,
-    MobBucket, PlayerBucket,
+    Action, Animation, BaseTile, Direction, Entity, EntityIndex, Food, Grid, Map, MobBucket,
+    PlayerBucket,
 };
 
 #[derive(Clone, Debug)]
@@ -67,6 +67,7 @@ impl Player {
                 self.score += 10;
             }
             Food::PowerPill => {
+                self.score += 50;
                 self.has_powerpill = true;
             }
         }
@@ -122,6 +123,7 @@ impl Entity for Player {
     fn process_turn(
         &mut self,
         entities: &mut Grid<Option<EntityIndex>>,
+        food: &mut Grid<Option<Food>>,
         mobs: &MobBucket,
         players: &PlayerBucket,
         map: &Map,
@@ -149,7 +151,7 @@ impl Entity for Player {
                     }
 
                     if let Some(entity_index) = &entities[new_x as usize][new_y as usize] {
-                        let mut enemy = entity_index.as_entity_mut(mobs, players).unwrap();
+                        let mut enemy = entity_index.as_entity(mobs, players).borrow_mut();
                         if !enemy.is_invulnerable() {
                             enemy.deal_damage(1);
 
@@ -164,6 +166,11 @@ impl Entity for Player {
                             // We can't attack them so we must stay
                             return;
                         }
+                    }
+
+                    if let Some(food_item) = food[new_x as usize][new_y as usize].clone() {
+                        self.eat(food_item);
+                        food[new_x as usize][new_y as usize] = None;
                     }
 
                     // Apply the movement:

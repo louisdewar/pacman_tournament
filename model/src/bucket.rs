@@ -1,9 +1,18 @@
 use std::collections::HashMap;
 
+// TODO: based on current implementation the best internal datastructure for
+// bucket would be a vector of options of T
+
 #[derive(Clone, Debug)]
 pub struct Bucket<T> {
     inner: HashMap<usize, T>,
     max_id: usize,
+}
+
+impl<T> Default for Bucket<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> Bucket<T> {

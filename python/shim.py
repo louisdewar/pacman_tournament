@@ -40,17 +40,22 @@ class Ai:
             'E' => Eat
             'S' => Stay
         """
-
         print('----' * 3)
         for y in range(4):
             for x in range(3):
                 entity = 'M' if game[x][y]['mob'] else 'P' if game[x][y]['player'] else '_'
-                print(' {}{} '.format(game[x][y]['base'], entity), end='')
+                # Food is either F = Fruit or P = Powerpill or None (no food)
+                food = game[x][y]['food'] if game[x][y]['food'] != None else '_'
+
+                print(' {}{}{} '.format(game[x][y]['base'], entity, food), end='')
             print('')
         print('----' * 3)
+        # Information about the current player (always in 1,2)
+        print(game[1][2]['player'])
 
         if game[1][1]['base'] != 'L':
-            return 'S'
+            print('We can\'t advance so turning right')
+            return 'R'
 
         return 'F'
 

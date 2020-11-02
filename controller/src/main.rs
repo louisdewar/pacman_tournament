@@ -1,9 +1,9 @@
-use model::{Map, Model, NetworkManager};
+use model::{GameEvent, Map, Model, NetworkManager, NetworkMessage};
+use std::sync::mpsc::Receiver;
 
 use ggez::{
     event::EventHandler,
     graphics,
-    graphics::spritebatch::SpriteBatch,
     input::keyboard::{KeyCode, KeyMods},
     Context, GameResult,
 };
@@ -12,29 +12,50 @@ mod view;
 use view::View;
 
 struct Game {
-    model: Model,
+    model: Model<Box<dyn Fn(GameEvent)>>,
     view: View,
+    rx: Receiver<NetworkMessage>,
 }
 
 impl Game {
     pub fn new<A: std::net::ToSocketAddrs>(map: Map, ctx: &mut Context, addr: A) -> Game {
         let (tx, rx) = NetworkManager::start(addr).expect("Couldn't start network manager");
         Game {
-            model: Model::new(map, rx, tx),
+            model: Model::new(map, Box::new(move |event| tx.send(event).unwrap())),
             view: View::new(ctx),
+            rx,
         }
     }
 
     fn setup(&mut self, ctx: &mut Context) -> GameResult {
         self.view.setup(ctx)
     }
+
+    fn handle_network_messages(&mut self) {
+        while let Ok(msg) = self.rx.try_recv() {
+            match msg {
+                NetworkMessage::ClientConnect {
+                    temporary_id,
+                    username,
+                } => {
+                    self.model.add_client(username, temporary_id);
+                }
+                NetworkMessage::PlayerAction { id, action, tick } => {
+                    self.model.player_action(id, action, tick);
+                }
+                NetworkMessage::ClientDisconnect { id } => {
+                    self.model.remove_client(id);
+                }
+            }
+        }
+    }
 }
 
 impl EventHandler for Game {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
-        self.model.handle_network_messages();
+        self.handle_network_messages();
 
-        if ggez::timer::check_update_time(ctx, 1) {
+        if ggez::timer::check_update_time(ctx, 1) || self.model.waiting_players() == 0 {
             self.model.simulate_tick();
         } else {
             std::thread::sleep(std::time::Duration::from_millis(15));
@@ -86,6 +107,10 @@ fn main() {
         .window_setup(ggez::conf::WindowSetup::default().vsync(true));
 
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        println!(
+            "Using cargo manifest dir ({}) resources folder (if it exists)",
+            manifest_dir
+        );
         let mut path = std::path::PathBuf::from(manifest_dir);
         path.push("resources");
         cb = cb.add_resource_path(path);

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Grid, Map, MobBucket, PlayerBucket};
+use std::cell::RefCell;
+
+use crate::{Food, Grid, Map, MobBucket, PlayerBucket};
 
 mod player;
 pub use player::Player;
@@ -118,6 +120,7 @@ pub trait Entity {
     fn process_turn(
         &mut self,
         entities: &mut Grid<Option<EntityIndex>>,
+        food: &mut Grid<Option<Food>>,
         mobs: &MobBucket,
         players: &PlayerBucket,
         map: &Map,
@@ -183,22 +186,14 @@ impl EntityIndex {
         self.index
     }
 
-    pub fn as_entity_mut<'a>(
+    pub fn as_entity<'a>(
         &self,
         mobs: &'a MobBucket,
         players: &'a PlayerBucket,
-    ) -> Option<std::cell::RefMut<'a, dyn Entity>> {
+    ) -> &'a RefCell<dyn Entity> {
         match self.entity_type {
-            EntityType::Mob => mobs.get(self.index).map(|e| {
-                // This short cast is unforunately required for some reason I'm not too sure about,
-                // I think it has something to do with the map function.
-                let x: std::cell::RefMut<'_, dyn Entity> = e.borrow_mut();
-                x
-            }),
-            EntityType::Player => players.get(self.index).map(|e| {
-                let x: std::cell::RefMut<'_, dyn Entity> = e.borrow_mut();
-                x
-            }),
+            EntityType::Mob => mobs.get(self.index).unwrap(),
+            EntityType::Player => players.get(self.index).unwrap(),
         }
     }
 }

@@ -45,6 +45,14 @@ impl<T> Grid<T> {
         debug_assert_eq!(self.width * self.height, self.inner.len());
         self.inner.len()
     }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
 }
 
 impl<T> Index<usize> for Grid<T> {

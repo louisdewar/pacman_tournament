@@ -1,22 +1,32 @@
+use crate::{Food, Grid};
+
 #[derive(Clone, Debug)]
 pub struct Map {
-    pub width: u16,
-    pub height: u16,
-    pub base_tile: Vec<BaseTile>,
-    pub player_spawn: SpawnLocation,
-    pub mob_spawn: SpawnLocation,
+    width: u16,
+    height: u16,
+    base_tile: Grid<BaseTile>,
+    default_food_locations: Grid<Option<Food>>,
+    player_spawn: SpawnLocation,
+    mob_spawn: SpawnLocation,
 }
 
 impl Map {
     pub fn new(width: u16, height: u16) -> Map {
-        let mut base_tile = vec![BaseTile::Land; width as usize * height as usize];
-        base_tile[0] = BaseTile::Water;
-        base_tile[30] = BaseTile::Wall;
+        let mut base_tile = Grid::fill_with_clone(BaseTile::Land, width as usize, height as usize);
+        base_tile[0][0] = BaseTile::Water;
+        base_tile[12][1] = BaseTile::Wall;
+
+        let mut default_food_locations =
+            Grid::fill_with_clone(None, width as usize, height as usize);
+        default_food_locations[10][5] = Some(Food::Fruit);
+        default_food_locations[10][3] = Some(Food::Fruit);
+        default_food_locations[10][1] = Some(Food::PowerPill);
 
         Map {
             width,
             height,
             base_tile,
+            default_food_locations,
             player_spawn: SpawnLocation::Defined(vec![(10, 10)]),
             mob_spawn: SpawnLocation::Defined(vec![(10, 13)]),
         }
@@ -64,15 +74,31 @@ impl Map {
     }
 
     pub fn base_tile(&self, x: usize, y: usize) -> &BaseTile {
-        &self.base_tile[self.flatten_coordinate(x, y)]
+        &self.base_tile[x][y]
     }
 
-    pub fn width(&self) -> usize {
-        self.width as usize
+    pub fn base_tiles(&self) -> &Grid<BaseTile> {
+        &self.base_tile
     }
 
-    pub fn height(&self) -> usize {
-        self.height as usize
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+
+    pub fn mob_spawn(&self) -> &SpawnLocation {
+        &self.mob_spawn
+    }
+
+    pub fn player_spawn(&self) -> &SpawnLocation {
+        &self.player_spawn
+    }
+
+    pub fn default_food_locations(&self) -> &Grid<Option<Food>> {
+        &self.default_food_locations
     }
 }
 

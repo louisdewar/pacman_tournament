@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 use std::io::Write;
@@ -7,16 +6,38 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Action, BaseTile, Bucket, Direction, Entity, EntityIndex, Grid, Map, Mob, Player};
+use crate::{Action, BaseTile, Bucket, Direction, Entity, Food, GameData, GameEvent, Mob};
 
-struct Connection {
+/// Useful building block for custom network managers
+/// It has a buffer of 1024 bytes with a TCP stream.
+/// It will take incoming messages and fill them into the buffer producing messages
+/// when it finds a '\n', if the buffer fills up before finding and newline then
+/// it empties the buffer and logs an error.
+pub struct Connection {
     stream: TcpStream,
     buf: [u8; 1024],
     buf_len: usize,
 }
 
 impl Connection {
-    fn next_message<T: serde::de::DeserializeOwned>(
+    pub fn new(stream: TcpStream) -> Connection {
+        Connection {
+            stream,
+            buf: [0; 1024],
+            buf_len: 0,
+        }
+    }
+
+    /// First returns the oldest message (from start to newline (exclusive))
+    /// by deserialising the bytes.
+    /// If there is no message / an incomplete one it tries to fill the buffer as
+    /// much as possible (only then next call of this method will deserialize the
+    /// message in the buffer.
+    /// This is non-blocking if the provided TcpStream is non-blocking.
+    ///
+    /// Returns an error if there is an issue reading from the stream (i.e. it is probably
+    /// disconnected). In the event the message is malformatted it will log and return Ok(None).
+    pub fn next_message<T: serde::de::DeserializeOwned>(
         &mut self,
         player_id: String,
     ) -> Result<Option<T>, ()> {
@@ -94,13 +115,13 @@ pub struct NetworkManager {
     clients: HashMap<usize, Connection>,
     unallocated_clients: Bucket<Connection>,
     tx: Sender<NetworkMessage>,
-    rx: Receiver<GameMessage>,
+    rx: Receiver<GameEvent>,
 }
 
 impl NetworkManager {
     pub fn start<A: ToSocketAddrs>(
         addr: A,
-    ) -> io::Result<(Sender<GameMessage>, Receiver<NetworkMessage>)> {
+    ) -> io::Result<(Sender<GameEvent>, Receiver<NetworkMessage>)> {
         let (client_tx, server_rx) = channel();
         let (server_tx, client_rx) = channel();
 
@@ -156,7 +177,6 @@ impl NetworkManager {
         for (temporary_id, conn) in self.unallocated_clients.iter_mut() {
             match conn.next_message::<ClientConnectMessage>(format!("[temp_id] {}", temporary_id)) {
                 Ok(Some(msg)) => {
-                    dbg!();
                     self.tx
                         .send(NetworkMessage::ClientConnect {
                             temporary_id: *temporary_id,
@@ -185,7 +205,7 @@ impl NetworkManager {
 
     fn handle_game_messages(&mut self) {
         while let Ok(msg) = self.rx.try_recv() {
-            use GameMessage::*;
+            use GameEvent::*;
             match msg {
                 PlayerSpawned { temporary_id, id } => {
                     let stream = self
@@ -194,13 +214,15 @@ impl NetworkManager {
                         .expect("Temporary id didn't exist");
                     self.clients.insert(id, stream);
                 }
-                ProcessTick {
-                    map,
-                    entities,
-                    players,
-                    mobs,
-                    tick,
-                } => {
+                ProcessTick { game_data, tick } => {
+                    let GameData {
+                        players,
+                        mobs,
+                        map,
+                        food,
+                        entities,
+                    } = game_data;
+
                     for (player_id, player) in players.iter() {
                         let player = player.borrow();
                         let (player_x, player_y) = player.position();
@@ -220,13 +242,14 @@ impl NetworkManager {
 
                             if new_x < 0
                                 || new_y < 0
-                                || new_x >= map.width as i32
-                                || new_y >= map.height as i32
+                                || new_x >= map.width() as i32
+                                || new_y >= map.height() as i32
                             {
                                 return TileView {
                                     base: BaseTile::Wall,
                                     mob: None,
                                     player: None,
+                                    food: None,
                                 };
                             }
 
@@ -248,6 +271,7 @@ impl NetworkManager {
                                             direction: player.direction(),
                                             health: player.health(),
                                             is_invulnerable: player.is_invulnerable(),
+                                            has_powerpill: player.has_powerpill(),
                                             is_current_player,
                                         };
                                         (None, Some(player_view))
@@ -259,6 +283,7 @@ impl NetworkManager {
 
                             TileView {
                                 base: map.base_tile(x as usize, y as usize).clone(),
+                                food: food[x as usize][y as usize].clone(),
                                 player,
                                 mob,
                             }
@@ -287,7 +312,7 @@ impl NetworkManager {
                         }
                     }
                 }
-                GameMessage::PlayerDied {
+                GameEvent::PlayerDied {
                     player_id,
                     final_score,
                 } => {
@@ -312,6 +337,7 @@ impl NetworkManager {
 struct PlayerView {
     direction: Direction,
     health: u8,
+    has_powerpill: bool,
     is_invulnerable: bool,
     is_current_player: bool,
 }
@@ -334,6 +360,7 @@ struct TileView {
     base: BaseTile,
     player: Option<PlayerView>,
     mob: Option<MobView>,
+    food: Option<Food>,
 }
 
 #[derive(Serialize)]
@@ -358,24 +385,7 @@ struct ClientConnectMessage {
     username: String,
 }
 
-pub enum GameMessage {
-    PlayerSpawned {
-        temporary_id: usize,
-        id: usize,
-    },
-    ProcessTick {
-        map: Map,
-        entities: Grid<Option<EntityIndex>>,
-        players: Bucket<RefCell<Player>>,
-        mobs: Bucket<RefCell<Mob>>,
-        tick: u32,
-    },
-    PlayerDied {
-        player_id: usize,
-        final_score: usize,
-    },
-}
-
+/// An event produced by the front end (typically network manager)
 pub enum NetworkMessage {
     ClientConnect {
         temporary_id: usize,
