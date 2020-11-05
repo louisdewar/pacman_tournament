@@ -29,32 +29,24 @@ pub type PlayerBucket = Bucket<RefCell<Player>>;
 
 #[derive(Debug, Clone)]
 pub struct GameData {
-    map: Map,
-    entities: Grid<Option<EntityIndex>>,
-    food: Grid<Option<Food>>,
-    players: PlayerBucket,
-    mobs: MobBucket,
+    pub map: Map,
+    pub entities: Grid<Option<EntityIndex>>,
+    pub food: Grid<Option<Food>>,
+    pub players: PlayerBucket,
+    pub mobs: MobBucket,
 }
 
 /// An event produced by the game model
+#[derive(Debug, Clone)]
 pub enum GameEvent {
-    PlayerSpawned {
-        temporary_id: usize,
-        id: usize,
-    },
-    ProcessTick {
-        game_data: GameData,
-        tick: u32,
-    },
-    PlayerDied {
-        player_id: usize,
-        final_score: usize,
-    },
+    PlayerSpawned { temporary_id: usize, id: usize },
+    ProcessTick { game_data: GameData, tick: u32 },
+    PlayerDied { player_id: usize, final_score: u32 },
 }
 
 pub struct Model<F: Fn(GameEvent) -> ()> {
     data: GameData,
-    spawning_players: Vec<(String, usize)>,
+    spawning_players: Vec<usize>,
     tick: u32,
     tick_start: Instant,
     /// The number of players we're waiting so submit an action
@@ -84,7 +76,7 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
         self.data.entities[x as usize][y as usize] = Some(index);
     }
 
-    pub fn spawn_player(&mut self, username: String) -> Option<usize> {
+    fn spawn_player(&mut self) -> Option<usize> {
         let (x, y) = match self.spawn_location(&self.data.map.player_spawn()) {
             Some(location) => location,
             None => return None,
@@ -95,7 +87,6 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
             Direction::North,
             1,
             2,
-            username,
             None,
         )));
 
@@ -181,6 +172,8 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
     ///    up in the next step)
     /// 2. Send messages about dead players (also clean up dead mobs)
     /// 3. Spawn new players (if there is space)
+    ///
+    /// TODO: make tick take in a closure to remove the global callback
     pub fn simulate_tick(&mut self) {
         self.tick += 1;
         self.tick_start = Instant::now();
@@ -246,11 +239,11 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
 
         std::mem::swap(&mut current_spawning_players, &mut self.spawning_players);
 
-        for (username, temporary_id) in current_spawning_players {
-            if let Some(id) = self.spawn_player(username.clone()) {
+        for temporary_id in current_spawning_players {
+            if let Some(id) = self.spawn_player() {
                 (self.event_handler)(GameEvent::PlayerSpawned { temporary_id, id })
             } else {
-                self.spawning_players.push((username, temporary_id));
+                self.spawning_players.push(temporary_id);
             }
         }
 
@@ -272,6 +265,10 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
 
     pub fn players(&self) -> &PlayerBucket {
         &self.data.players
+    }
+
+    pub fn spawning_players(&self) -> &Vec<usize> {
+        &self.spawning_players
     }
 
     pub fn mobs(&self) -> &MobBucket {
@@ -297,8 +294,8 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
     /// Adds the given username and temporary id to the list of spawning players.
     /// The system will try to spawn them in at the earliest convenience.
     /// Once they are spawned it will call the event handler with GameEvent::PlayerSpawned.
-    pub fn add_client(&mut self, username: String, temporary_id: usize) {
-        self.spawning_players.push((username, temporary_id));
+    pub fn add_client(&mut self, temporary_id: usize) {
+        self.spawning_players.push(temporary_id);
     }
 
     pub fn player_action(&mut self, id: usize, action: Action, tick: u32) {
@@ -338,6 +335,10 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
         let (x, y) = player.position();
         self.data.entities[x as usize][y as usize] = None;
         player
+    }
+
+    pub fn data(&self) -> &GameData {
+        &self.data
     }
 
     //    pub fn handle_network_messages(&mut self) {

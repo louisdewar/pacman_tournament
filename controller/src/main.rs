@@ -38,7 +38,7 @@ impl Game {
                     temporary_id,
                     username,
                 } => {
-                    self.model.add_client(username, temporary_id);
+                    self.model.add_client(temporary_id);
                 }
                 NetworkMessage::PlayerAction { id, action, tick } => {
                     self.model.player_action(id, action, tick);

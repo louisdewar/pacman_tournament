@@ -1,3 +1,4 @@
+use std::collections::hash_map::{Entry, VacantEntry};
 use std::collections::HashMap;
 
 // TODO: based on current implementation the best internal datastructure for
@@ -23,22 +24,41 @@ impl<T> Bucket<T> {
         }
     }
 
-    pub fn add(&mut self, item: T) -> usize {
+    pub fn insert(&mut self, id: usize, item: T) -> Option<T> {
+        if id >= self.max_id {
+            self.max_id = id + 1;
+        }
+
+        self.inner.insert(id, item)
+    }
+
+    pub fn minimum_available_id(&self) -> usize {
         if self.max_id == self.inner.len() {
-            self.inner.insert(self.max_id, item);
-            self.max_id += 1;
-            self.max_id - 1
+            self.max_id
         } else {
-            use std::collections::hash_map::Entry;
-            for i in 0..self.max_id {
-                if let Entry::Vacant(entry) = self.inner.entry(i) {
-                    entry.insert(item);
+            let max_id = self.max_id;
+            for i in 0..max_id {
+                if !self.inner.contains_key(&i) {
                     return i;
                 }
             }
-
-            unreachable!("only possible if len > max_id which should never happen");
+            unreachable!(
+                "only possible if len ({}) > max_id ({}) which should never happen",
+                self.inner.len(),
+                max_id
+            );
         }
+    }
+
+    pub fn add(&mut self, item: T) -> usize {
+        let i = self.minimum_available_id();
+        let item = self.insert(i, item);
+        debug_assert!(
+            item.is_none(),
+            "id {} already existed but add method tried to insert",
+            i
+        );
+        i
     }
 
     pub fn remove(&mut self, id: usize) -> Option<T> {

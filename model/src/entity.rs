@@ -10,7 +10,7 @@ pub use player::Player;
 mod mob;
 pub use mob::Mob;
 
-#[derive(Clone, Debug, Copy, Serialize)]
+#[derive(Clone, Debug, Copy, Serialize, PartialEq)]
 pub enum Direction {
     #[serde(rename(serialize = "N"))]
     North,
@@ -133,9 +133,11 @@ pub trait Entity {
     fn died(&self) -> bool {
         self.health() == 0
     }
+
+    fn entity_type(&self) -> EntityType;
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub enum EntityType {
     Player,
     Mob,
@@ -157,7 +159,7 @@ impl EntityType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EntityIndex {
     entity_type: EntityType,
     pub index: usize,

@@ -141,4 +141,8 @@ impl Entity for Mob {
             1
         }
     }
+
+    fn entity_type(&self) -> EntityType {
+        EntityType::Mob
+    }
 }

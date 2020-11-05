@@ -215,88 +215,9 @@ impl NetworkManager {
                     self.clients.insert(id, stream);
                 }
                 ProcessTick { game_data, tick } => {
-                    let GameData {
-                        players,
-                        mobs,
-                        map,
-                        food,
-                        entities,
-                    } = game_data;
-
-                    for (player_id, player) in players.iter() {
-                        let player = player.borrow();
-                        let (player_x, player_y) = player.position();
-                        let player_x = player_x as i32;
-                        let player_y = player_y as i32;
-                        let direction = player.direction();
-
-                        let c = |x: i32, y: i32| {
-                            let is_current_player = x == 0 && y == 0;
-                            use Direction::*;
-                            let (new_x, new_y) = match direction {
-                                North => (player_x + x, player_y - y),
-                                East => (player_x + y, player_y + x),
-                                South => (player_x - x, player_y + y),
-                                West => (player_x - y, player_y - x),
-                            };
-
-                            if new_x < 0
-                                || new_y < 0
-                                || new_x >= map.width() as i32
-                                || new_y >= map.height() as i32
-                            {
-                                return TileView {
-                                    base: BaseTile::Wall,
-                                    mob: None,
-                                    player: None,
-                                    food: None,
-                                };
-                            }
-
-                            let (x, y) = (new_x as u16, new_y as u16);
-
-                            let (mob, player) = if let Some(entity_index) =
-                                &entities[x as usize][y as usize]
-                            {
-                                use crate::entity::EntityType;
-                                match entity_index.entity_type() {
-                                    EntityType::Mob => (
-                                        Some(mobs.get(entity_index.index).unwrap().borrow().into()),
-                                        None,
-                                    ),
-                                    EntityType::Player => {
-                                        let player =
-                                            players.get(entity_index.index).unwrap().borrow();
-                                        let player_view = PlayerView {
-                                            direction: player.direction(),
-                                            health: player.health(),
-                                            is_invulnerable: player.is_invulnerable(),
-                                            has_powerpill: player.has_powerpill(),
-                                            is_current_player,
-                                        };
-                                        (None, Some(player_view))
-                                    }
-                                }
-                            } else {
-                                (None, None)
-                            };
-
-                            TileView {
-                                base: map.base_tile(x as usize, y as usize).clone(),
-                                food: food[x as usize][y as usize].clone(),
-                                player,
-                                mob,
-                            }
-                        };
-
-                        let view = [
-                            [c(-1, 2), c(-1, 1), c(-1, 0), c(-1, -1)],
-                            [c(0, 2), c(0, 1), c(0, 0), c(0, -1)],
-                            [c(1, 2), c(1, 1), c(1, 0), c(1, -1)],
-                        ];
-
+                    for (player_id, _) in game_data.players.iter() {
                         if let Some(conn) = self.clients.get_mut(player_id) {
-                            let tick_msg = TickMessage { view, tick };
+                            let tick_msg = create_tick_message(&game_data, *player_id, tick);
                             let mut msg = serde_json::to_string(&tick_msg)
                                 .expect("Couldn't serialize message");
                             msg.push('\n');
@@ -333,6 +254,82 @@ impl NetworkManager {
     }
 }
 
+pub fn create_tick_message(game_data: &GameData, player_id: usize, tick: u32) -> TickMessage {
+    let GameData {
+        players,
+        mobs,
+        map,
+        food,
+        entities,
+    } = game_data;
+
+    let player = players.get(player_id).unwrap().borrow();
+    let (player_x, player_y) = player.position();
+    let player_x = player_x as i32;
+    let player_y = player_y as i32;
+    let direction = player.direction();
+
+    let c = |x: i32, y: i32| {
+        let is_current_player = x == 0 && y == 0;
+        use Direction::*;
+        let (new_x, new_y) = match direction {
+            North => (player_x + x, player_y - y),
+            East => (player_x + y, player_y + x),
+            South => (player_x - x, player_y + y),
+            West => (player_x - y, player_y - x),
+        };
+
+        if new_x < 0 || new_y < 0 || new_x >= map.width() as i32 || new_y >= map.height() as i32 {
+            return TileView {
+                base: BaseTile::Wall,
+                mob: None,
+                player: None,
+                food: None,
+            };
+        }
+
+        let (x, y) = (new_x as u16, new_y as u16);
+
+        let (mob, player) = if let Some(entity_index) = &entities[x as usize][y as usize] {
+            use crate::entity::EntityType;
+            match entity_index.entity_type() {
+                EntityType::Mob => (
+                    Some(mobs.get(entity_index.index).unwrap().borrow().into()),
+                    None,
+                ),
+                EntityType::Player => {
+                    let player = players.get(entity_index.index).unwrap().borrow();
+                    let player_view = PlayerView {
+                        direction: player.direction(),
+                        health: player.health(),
+                        is_invulnerable: player.is_invulnerable(),
+                        has_powerpill: player.has_powerpill(),
+                        is_current_player,
+                    };
+                    (None, Some(player_view))
+                }
+            }
+        } else {
+            (None, None)
+        };
+
+        TileView {
+            base: map.base_tile(x as usize, y as usize).clone(),
+            food: food[x as usize][y as usize].clone(),
+            player,
+            mob,
+        }
+    };
+
+    let view = [
+        [c(-1, 2), c(-1, 1), c(-1, 0), c(-1, -1)],
+        [c(0, 2), c(0, 1), c(0, 0), c(0, -1)],
+        [c(1, 2), c(1, 1), c(1, 0), c(1, -1)],
+    ];
+
+    TickMessage { view, tick }
+}
+
 #[derive(Serialize, Debug)]
 struct PlayerView {
     direction: Direction,
@@ -364,20 +361,21 @@ struct TileView {
 }
 
 #[derive(Serialize)]
-struct TickMessage {
+pub struct TickMessage {
     view: [[TileView; 4]; 3],
     tick: u32,
 }
 
 #[derive(Serialize)]
-struct PlayerDiedMessage {
-    final_score: usize,
+pub struct PlayerDiedMessage {
+    pub final_score: u32,
 }
 
 #[derive(Deserialize)]
-struct ActionMessage {
-    tick: u32,
-    action: Action,
+/// Represents a message that a client might send to indicate their action for a particular tick
+pub struct ActionMessage {
+    pub tick: u32,
+    pub action: Action,
 }
 
 #[derive(Deserialize)]

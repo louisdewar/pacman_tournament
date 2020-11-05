@@ -1,0 +1,16 @@
+version: "3"
+services: 
+  ai_tournament_db:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: docker
+      POSTGRES_USER: ai_tournament
+      POSTGRES_DB: tournament
+    ports: 
+      - "2019:5432"
+    networks: 
+      - "service"
+    volumes:
+      - ./data:/var/lib/postgresql/
+networks:
+  service:

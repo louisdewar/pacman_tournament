@@ -6,5 +6,11 @@ edition = "2018"
 
 [dependencies]
 model = { path = "../model" }
-tungstenite = "0.11.1"
-serde = "1.0"
+# We need support for tokio 3 which isn't currently released on only the master branch
+tokio-tungstenite = { git = "https://github.com/snapview/tokio-tungstenite" }
+futures-util = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "0.3", features = ["full"] }
+diesel = { version = "1.4", features = ["postgres", "r2d2"] }
+diesel_migrations = "1.4"

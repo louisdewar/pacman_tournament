@@ -1,4 +1,4 @@
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, PartialEq)]
 pub enum Food {
     #[serde(rename(serialize = "F"))]
     Fruit,

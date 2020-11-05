@@ -1,6 +1,6 @@
 use crate::{
-    Action, Animation, BaseTile, Direction, Entity, EntityIndex, Food, Grid, Map, MobBucket,
-    PlayerBucket,
+    Action, Animation, BaseTile, Direction, Entity, EntityIndex, EntityType, Food, Grid, Map,
+    MobBucket, PlayerBucket,
 };
 
 #[derive(Clone, Debug)]
@@ -12,8 +12,7 @@ pub struct Player {
     health: u8,
     invulnerable_turns: u8,
     has_powerpill: bool,
-    score: usize,
-    pub username: String,
+    score: u32,
     pub next_action: Option<Action>,
 }
 
@@ -23,7 +22,6 @@ impl Player {
         direction: Direction,
         health: u8,
         invulnerable_turns: u8,
-        username: String,
         next_action: Option<Action>,
     ) -> Self {
         Player {
@@ -33,7 +31,6 @@ impl Player {
             invulnerable_turns,
             has_powerpill: false,
             score: 0,
-            username,
             next_action,
             pos_animation: Default::default(),
             direction_animation: Default::default(),
@@ -52,7 +49,7 @@ impl Player {
         action
     }
 
-    pub fn score(&self) -> usize {
+    pub fn score(&self) -> u32 {
         self.score
     }
 
@@ -180,7 +177,7 @@ impl Entity for Player {
                     );
                     self.set_pos((new_x, new_y), true);
                 } else {
-                    println!("Player {} tried to move forward off map", &self.username);
+                    println!("Player tried to move forward off map");
                 }
             }
             Action::TurnRight => self.turn(self.direction().clockwise(), true),
@@ -199,5 +196,9 @@ impl Entity for Player {
 
     fn is_invulnerable(&self) -> bool {
         self.invulnerable_turns > 0
+    }
+
+    fn entity_type(&self) -> EntityType {
+        EntityType::Player
     }
 }

@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Grid<T> {
     width: usize,
     height: usize,
@@ -52,6 +52,22 @@ impl<T> Grid<T> {
 
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    /// Returns a flat iter that yields values column major (blocks of columns of increasing y then
+    /// back to 0 y at the end of the columns (height) with +1 x)
+    pub fn iter_column_major(&self) -> impl Iterator<Item = &T> {
+        self.inner.iter()
+    }
+
+    pub fn from_column_major(column_major_array: Vec<T>, width: usize, height: usize) -> Self {
+        assert_eq!(width * height, column_major_array.len());
+
+        Grid {
+            inner: column_major_array,
+            width,
+            height,
+        }
     }
 }
 

@@ -3,10 +3,10 @@ import json
 import sys
 
 class Ai:
-    def __init__(self, address, port, username):
+    def __init__(self, address, port, username, code):
         print('Connecting to {}:{}'.format(address, port))
         self.sock = socket.create_connection((address, port))
-        self.sock.send(bytes(json.dumps({ 'username': username }) + '\n', 'utf-8'))
+        self.sock.send(bytes(json.dumps({ 'username': username, 'code': code }) + '\n', 'utf-8'))
 
     def start(self):
         buf = ''
@@ -18,13 +18,23 @@ class Ai:
                 buf = buf[index + 1:]
                 try:
                     data = json.loads(msg)
-                    if 'final_score' in data:
-                        print('You died your final score was', data['final_score'])
+                    if 'error' in data:
+                        print('There was an error:', data['error'])
                         return
 
-                    action = self.choose_action(data['view'])
-                    print('Playing action', action, 'on tick', data['tick'])
-                    self.sock.send(bytes(json.dumps({ 'tick': data['tick'], 'action': action }) + '\n', 'utf-8'))
+                    if 'died' in data:
+                        print('You died your final score was', data['died']['final_score'])
+                        return
+
+                    if 'spawned' in data:
+                        print('You have been spawned into game id', data['spawned']['game_id'])
+                        continue
+
+                    if 'tick' in data:
+                        tick = data['tick']
+                        action = self.choose_action(tick['view'])
+                        print('Playing action', action, 'on tick', tick['tick'])
+                        self.sock.send(bytes(json.dumps({ 'tick': tick['tick'], 'action': action }) + '\n', 'utf-8'))
                 except json.decoder.JSONDecodeError:
                     print('msg `%s` from the server was invalid json' % msg)
             else:
@@ -65,8 +75,11 @@ if __name__ =='__main__':
         ip = sys.argv[1]
         port = sys.argv[2]
         username = sys.argv[3]
+        code = sys.argv[4]
     except IndexError:
-        print("Usage: python3 shim.py [ip] [port] [username]")
-    ai = Ai(ip, port, username)
+        print("Usage: python3 shim.py [ip] [port] [username] [code]")
+        sys.exit(1)
+
+    ai = Ai(ip, port, username, code)
 
     ai.start()

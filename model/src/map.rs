@@ -1,6 +1,6 @@
 use crate::{Food, Grid};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Map {
     width: u16,
     height: u16,
@@ -122,7 +122,7 @@ pub enum BaseTile {
 //     }
 // }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SpawnLocation {
     Random,
     Defined(Vec<(u16, u16)>),
