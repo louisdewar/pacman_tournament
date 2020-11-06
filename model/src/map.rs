@@ -13,7 +13,6 @@ pub struct Map {
 impl Map {
     pub fn new(width: u16, height: u16) -> Map {
         let mut base_tile = Grid::fill_with_clone(BaseTile::Land, width as usize, height as usize);
-        base_tile[0][0] = BaseTile::Water;
         base_tile[12][1] = BaseTile::Wall;
 
         let mut default_food_locations =
@@ -29,6 +28,88 @@ impl Map {
             default_food_locations,
             player_spawn: SpawnLocation::Defined(vec![(10, 10)]),
             mob_spawn: SpawnLocation::Defined(vec![(10, 13)]),
+        }
+    }
+
+    pub fn new_from_string(input: &str) -> Map {
+        let mut lines = input.lines().peekable();
+
+        let mut x: u16 = 0;
+        let mut y: u16 = 0;
+
+        let mut rows = Vec::new();
+        let mut player_spawn_locations = Vec::new();
+        let mut mob_spawn_locations = Vec::new();
+
+        let width = lines.peek().unwrap().len();
+
+        for line in lines {
+            assert_eq!(line.len(), width, "Map must be rectangular");
+            let mut row = Vec::with_capacity(width);
+
+            for c in line.chars() {
+                let (food, base_tile) = match c {
+                    'X' => (None, BaseTile::Wall),
+                    ' ' => (None, BaseTile::Land),
+                    '.' => (Some(Food::Fruit), BaseTile::Land),
+                    '|' => (Some(Food::PowerPill), BaseTile::Land),
+                    'P' => {
+                        player_spawn_locations.push((x, y));
+                        (None, BaseTile::Land)
+                    }
+                    'M' => {
+                        mob_spawn_locations.push((x, y));
+                        (None, BaseTile::Land)
+                    }
+                    c => panic!("Invalid map character: {}", c),
+                };
+
+                row.push((food, base_tile));
+                x += 1;
+            }
+
+            x = 0;
+
+            rows.push(row);
+            y += 1;
+        }
+
+        let height = y as usize;
+
+        let mut base_tile = Grid::fill_with_clone(BaseTile::Land, width, height);
+        let mut default_food_locations = Grid::fill_with_clone(None, width, height);
+
+        // We need to convert from row major to column major
+        for x in 0..width {
+            for y in 0..height {
+                let (food, tile) = rows[y][x].clone();
+                base_tile[x][y] = tile;
+                default_food_locations[x][y] = food;
+            }
+        }
+
+        assert_eq!(base_tile.len(), width * height);
+        assert_eq!(default_food_locations.len(), width * height);
+
+        let player_spawn = if player_spawn_locations.len() > 0 {
+            SpawnLocation::Defined(player_spawn_locations)
+        } else {
+            SpawnLocation::Random
+        };
+
+        let mob_spawn = if mob_spawn_locations.len() > 0 {
+            SpawnLocation::Defined(mob_spawn_locations)
+        } else {
+            SpawnLocation::Random
+        };
+
+        Map {
+            default_food_locations,
+            base_tile,
+            player_spawn,
+            mob_spawn,
+            width: width as u16,
+            height: width as u16,
         }
     }
 

@@ -147,6 +147,12 @@ impl Entity for Player {
                         return;
                     }
 
+                    debug_assert_ne!(
+                        (new_x, new_y),
+                        (cur_x, cur_y),
+                        "Old and new positions were the same"
+                    );
+
                     if let Some(entity_index) = &entities[new_x as usize][new_y as usize] {
                         let mut enemy = entity_index.as_entity(mobs, players).borrow_mut();
                         if !enemy.is_invulnerable() {
@@ -159,6 +165,8 @@ impl Entity for Player {
 
                             // Remove the dead enemy from the board
                             entities[new_x as usize][new_y as usize] = None;
+                            // Get some points for killing an enemy
+                            self.score += 100;
                         } else {
                             // We can't attack them so we must stay
                             return;
@@ -169,6 +177,11 @@ impl Entity for Player {
                         self.eat(food_item);
                         food[new_x as usize][new_y as usize] = None;
                     }
+
+                    debug_assert!(
+                        entities[new_x as usize][new_y as usize].is_none(),
+                        "Tile we're moving into wasn't None"
+                    );
 
                     // Apply the movement:
                     entities.swap(

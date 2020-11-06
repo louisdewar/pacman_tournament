@@ -204,12 +204,17 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
         for entity_index in entity_queue {
             match entity_index.entity_type() {
                 EntityType::Mob => mobs.get(entity_index.index()).map(|m| {
-                    m.borrow_mut()
-                        .process_turn(entities, food, mobs, players, map)
+                    // We shouldn't process the turn for a dead entity
+                    if !m.borrow().died() {
+                        m.borrow_mut()
+                            .process_turn(entities, food, mobs, players, map)
+                    }
                 }),
                 EntityType::Player => players.get(entity_index.index()).map(|p| {
-                    p.borrow_mut()
-                        .process_turn(entities, food, mobs, players, map)
+                    if !p.borrow().died() {
+                        p.borrow_mut()
+                            .process_turn(entities, food, mobs, players, map)
+                    }
                 }),
             };
         }

@@ -51,7 +51,7 @@ async fn main() {
         competitor_rx,
     )
     .await
-    .expect("Couldn't start client manager");
+    .expect("Couldn't start competitor manager");
 
     authentication::AuthenticationManager::start(
         competitor_tx.clone(),
@@ -60,13 +60,9 @@ async fn main() {
         pool.clone(),
     );
 
-    game::GlobalManager::start(
-        game_rx,
-        competitor_tx,
-        score_tx,
-        spectator_tx,
-        model::Map::new(16, 16),
-    );
+    let map = model::Map::new_from_string(include_str!("map.txt"));
+
+    game::GlobalManager::start(game_rx, competitor_tx, score_tx, spectator_tx, map);
     score::ScoreManager::start(pool, score_rx);
     // This awaits the server starting only
     spectator::Manager::start("0.0.0.0:3002", spectator_rx).await;

@@ -1,4 +1,4 @@
-use model::{Bucket, Entity, EntityType, Food, GameData, Grid};
+use model::{Bucket, Entity, EntityIndex, Food, GameData, Grid};
 
 use std::cell::RefCell;
 
@@ -11,6 +11,9 @@ fn flatten_coordinate(height: u32, (x, y): (u16, u16)) -> u32 {
 pub fn find_entity_deltas<E: Entity>(
     old_entities: &Bucket<RefCell<E>>,
     new_entities: &Bucket<RefCell<E>>,
+    // The only purpose of the grid is for an extra assert to ensure that positions match the index
+    // in the grid
+    old_grid: &Grid<Option<EntityIndex>>,
     entity_died: &mut Vec<EntityDied>,
     entity_moved: &mut Vec<EntityMoved>,
     entity_spawned: &mut Vec<EntitySpawned>,
@@ -48,6 +51,16 @@ pub fn find_entity_deltas<E: Entity>(
                 position: flatten_coordinate(height, old_entity.borrow().position()),
             });
         }
+
+        let (old_x, old_y) = old_entity.borrow().position();
+        assert!(old_grid[old_x as usize][old_y as usize].is_some());
+        assert_eq!(
+            old_grid[old_x as usize][old_y as usize]
+                .as_ref()
+                .unwrap()
+                .index(),
+            *entity_id
+        );
     }
 
     // Find the new entities that weren't in old entities
@@ -127,9 +140,12 @@ pub fn create_delta_message(
 
     let height = old_state.map.height() as u32;
 
+    let old_grid = &old_state.entities;
+
     find_entity_deltas(
         old_players,
         new_players,
+        old_grid,
         &mut entity_died,
         &mut entity_moved,
         &mut entity_spawned,
@@ -140,6 +156,7 @@ pub fn create_delta_message(
     find_entity_deltas(
         old_mobs,
         new_mobs,
+        old_grid,
         &mut entity_died,
         &mut entity_moved,
         &mut entity_spawned,
