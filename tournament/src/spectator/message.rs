@@ -34,6 +34,7 @@ pub struct FoodSpawned {
 }
 
 pub struct MetadataChanged {
+    pub position: u32,
     pub metadata: DynamicEntityMetadata,
 }
 
@@ -50,6 +51,8 @@ pub struct CompleteEntityMetadata {
 
 pub struct InitialMessage {
     pub game_id: usize,
+    pub width: u16,
+    pub height: u16,
     pub base_tiles: Grid<BaseTile>,
     pub entities: Grid<Option<CompleteEntityMetadata>>,
     pub food: Grid<Option<Food>>,

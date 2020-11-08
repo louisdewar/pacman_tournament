@@ -1,0 +1,18 @@
+.Game {
+  position: relative;
+  margin-bottom: 30px;
+  display: inline-block;
+
+  canvas {
+    border-radius: 5px;
+  }
+
+  p {
+    position: absolute;
+    font-size: 15px;
+    opacity: 0.7;
+    margin: 0;
+    top: 100%;
+    right:0;
+  }
+}

@@ -27,6 +27,10 @@ impl<T: Serialize> Serialize for Grid<Option<T>> {
                 skip += 1;
             }
         }
+
+        if skip > 0 {
+            out.push_str(&format!("{}", skip));
+        }
     }
 }
 
@@ -137,6 +141,7 @@ impl Serialize for FoodSpawned {
 
 impl Serialize for MetadataChanged {
     fn serialize(&self, out: &mut String) {
+        out.push_str(&format!("{}", self.position));
         self.metadata.serialize(out);
     }
 }
@@ -179,7 +184,10 @@ impl Serialize for DeltaMessage {
 
 impl Serialize for InitialMessage {
     fn serialize(&self, out: &mut String) {
-        out.push_str(&format!("i{}_", self.game_id));
+        out.push_str(&format!(
+            "i{}_{}_{}_",
+            self.game_id, self.width, self.height
+        ));
 
         self.base_tiles.serialize(out);
         out.push('|');

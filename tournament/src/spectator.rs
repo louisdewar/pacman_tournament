@@ -1,6 +1,6 @@
 use tokio_tungstenite::{tungstenite::Message as WebSocketMessage, WebSocketStream};
 
-use model::{Bucket, GameData};
+use model::GameData;
 
 use std::collections::HashMap;
 use std::sync::Arc;

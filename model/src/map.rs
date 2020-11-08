@@ -109,7 +109,7 @@ impl Map {
             player_spawn,
             mob_spawn,
             width: width as u16,
-            height: width as u16,
+            height: height as u16,
         }
     }
 

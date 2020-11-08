@@ -304,6 +304,8 @@ pub fn create_tick_message(game_data: &GameData, player_id: usize, tick: u32) ->
                         health: player.health(),
                         is_invulnerable: player.is_invulnerable(),
                         has_powerpill: player.has_powerpill(),
+                        score: player.score(),
+                        username: player.username().clone(),
                         is_current_player,
                     };
                     (None, Some(player_view))
@@ -337,6 +339,8 @@ struct PlayerView {
     has_powerpill: bool,
     is_invulnerable: bool,
     is_current_player: bool,
+    score: u32,
+    username: String,
 }
 
 #[derive(Serialize, Debug)]

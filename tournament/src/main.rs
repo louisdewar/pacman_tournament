@@ -62,6 +62,8 @@ async fn main() {
 
     let map = model::Map::new_from_string(include_str!("map.txt"));
 
+    println!("Map has dimensions w{}xh{}", map.width(), map.height());
+
     game::GlobalManager::start(game_rx, competitor_tx, score_tx, spectator_tx, map);
     score::ScoreManager::start(pool, score_rx);
     // This awaits the server starting only

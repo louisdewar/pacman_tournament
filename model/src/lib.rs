@@ -21,6 +21,7 @@ pub use animation::Animation;
 mod grid;
 pub use grid::Grid;
 
+use std::collections::VecDeque;
 pub use std::sync::mpsc::{Receiver, Sender};
 pub use std::time::Instant;
 
@@ -44,18 +45,20 @@ pub enum GameEvent {
     PlayerDied { player_id: usize, final_score: u32 },
 }
 
-pub struct Model<F: Fn(GameEvent) -> ()> {
+pub struct Model {
     data: GameData,
-    spawning_players: Vec<usize>,
+    spawning_players: VecDeque<(usize, String)>,
+    // In future we may store metadata here, if we never decide to we can just do
+    // self.data.mobs.len() and work out how many to spawn that way.
+    spawning_mobs: VecDeque<()>,
     tick: u32,
     tick_start: Instant,
     /// The number of players we're waiting so submit an action
     waiting_players: usize,
-    event_handler: F,
 }
 
-impl<F: Fn(GameEvent) -> ()> Model<F> {
-    pub fn new(map: Map, event_handler: F) -> Model<F> {
+impl Model {
+    pub fn new(map: Map) -> Model {
         Model {
             data: GameData {
                 entities: Grid::fill_with_clone(None, map.width() as usize, map.height() as usize),
@@ -65,10 +68,10 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
                 mobs: Bucket::new(),
             },
             tick: 0,
-            spawning_players: Vec::new(),
+            spawning_players: VecDeque::new(),
+            spawning_mobs: VecDeque::new(),
             tick_start: Instant::now(),
             waiting_players: 0,
-            event_handler,
         }
     }
 
@@ -76,7 +79,7 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
         self.data.entities[x as usize][y as usize] = Some(index);
     }
 
-    fn spawn_player(&mut self) -> Option<usize> {
+    fn spawn_player(&mut self, username: String) -> Option<usize> {
         let (x, y) = match self.spawn_location(&self.data.map.player_spawn()) {
             Some(location) => location,
             None => return None,
@@ -87,6 +90,7 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
             Direction::North,
             1,
             2,
+            username,
             None,
         )));
 
@@ -108,7 +112,12 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
 
         self.add_entity((x, y), EntityIndex::new_mob(id));
 
+        println!("Spawned mob");
         true
+    }
+
+    pub fn queue_mob_spawn(&mut self) {
+        self.spawning_mobs.push_back(());
     }
 
     /// Takes in a spawn location and either selects one of the specified points or if the spawn
@@ -174,7 +183,7 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
     /// 3. Spawn new players (if there is space)
     ///
     /// TODO: make tick take in a closure to remove the global callback
-    pub fn simulate_tick(&mut self) {
+    pub fn simulate_tick<F: Fn(GameEvent)>(&mut self, callback: F) {
         self.tick += 1;
         self.tick_start = Instant::now();
 
@@ -224,7 +233,7 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
                 if player.borrow().died() {
                     let player = self.data.players.remove(player_id).unwrap();
 
-                    (self.event_handler)(GameEvent::PlayerDied {
+                    callback(GameEvent::PlayerDied {
                         player_id,
                         final_score: player.borrow().score(),
                     });
@@ -240,24 +249,29 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
             }
         }
 
-        let mut current_spawning_players = Vec::new();
-
-        std::mem::swap(&mut current_spawning_players, &mut self.spawning_players);
-
-        for temporary_id in current_spawning_players {
-            if let Some(id) = self.spawn_player() {
-                (self.event_handler)(GameEvent::PlayerSpawned { temporary_id, id })
+        while let Some((temporary_id, username)) = self.spawning_players.pop_front() {
+            if let Some(id) = self.spawn_player(username.clone()) {
+                callback(GameEvent::PlayerSpawned { temporary_id, id })
             } else {
-                self.spawning_players.push(temporary_id);
+                // We couldn't spawn the player so put them back where they were in the queue
+                self.spawning_players.push_front((temporary_id, username));
+                break;
             }
         }
 
+        while let Some(()) = self.spawning_mobs.pop_front() {
+            if self.spawn_mob() {
+            } else {
+                self.spawning_mobs.push_front(());
+                break;
+            }
+        }
         // Now that we've spawned all the players we can reset the waiting players and then
         // send the network tick message. (it's important that between the tick increment at the
         // start of this function no network messages we're able to be processed which is the case
         // because this is single threaded)
         self.waiting_players = self.data.players.len();
-        self.network_process_tick();
+        self.network_process_tick(callback);
     }
 
     pub fn tick_count(&self) -> u32 {
@@ -272,7 +286,7 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
         &self.data.players
     }
 
-    pub fn spawning_players(&self) -> &Vec<usize> {
+    pub fn spawning_players(&self) -> &VecDeque<(usize, String)> {
         &self.spawning_players
     }
 
@@ -289,8 +303,8 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
         self.waiting_players
     }
 
-    fn network_process_tick(&mut self) {
-        (self.event_handler)(GameEvent::ProcessTick {
+    fn network_process_tick<F: Fn(GameEvent)>(&mut self, callback: F) {
+        callback(GameEvent::ProcessTick {
             game_data: self.data.clone(),
             tick: self.tick,
         })
@@ -299,8 +313,8 @@ impl<F: Fn(GameEvent) -> ()> Model<F> {
     /// Adds the given username and temporary id to the list of spawning players.
     /// The system will try to spawn them in at the earliest convenience.
     /// Once they are spawned it will call the event handler with GameEvent::PlayerSpawned.
-    pub fn add_client(&mut self, temporary_id: usize) {
-        self.spawning_players.push(temporary_id);
+    pub fn add_client(&mut self, temporary_id: usize, username: String) {
+        self.spawning_players.push_back((temporary_id, username));
     }
 
     pub fn player_action(&mut self, id: usize, action: Action, tick: u32) {

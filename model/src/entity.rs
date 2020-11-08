@@ -80,6 +80,17 @@ impl Direction {
             _ => panic!("Invalid num"),
         }
     }
+
+    pub fn reverse(self) -> Self {
+        use Direction::*;
+
+        match self {
+            North => South,
+            East => West,
+            South => North,
+            West => East,
+        }
+    }
 }
 
 impl std::ops::Add<Direction> for Direction {

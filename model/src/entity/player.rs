@@ -13,6 +13,7 @@ pub struct Player {
     invulnerable_turns: u8,
     has_powerpill: bool,
     score: u32,
+    username: String,
     pub next_action: Option<Action>,
 }
 
@@ -22,6 +23,7 @@ impl Player {
         direction: Direction,
         health: u8,
         invulnerable_turns: u8,
+        username: String,
         next_action: Option<Action>,
     ) -> Self {
         Player {
@@ -34,6 +36,7 @@ impl Player {
             next_action,
             pos_animation: Default::default(),
             direction_animation: Default::default(),
+            username,
         }
     }
 
@@ -51,6 +54,10 @@ impl Player {
 
     pub fn score(&self) -> u32 {
         self.score
+    }
+
+    pub fn username(&self) -> &String {
+        &self.username
     }
 
     pub fn has_powerpill(&self) -> bool {

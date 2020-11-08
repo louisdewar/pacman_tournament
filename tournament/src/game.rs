@@ -38,10 +38,12 @@ pub struct GlobalManager {
 
 /// Manages a single game
 struct LocalManager {
-    model: Model<Box<dyn Fn(GameEvent) + Send>>,
+    model: Model,
     /// Maps from the in game player id to the user id
     /// It is only populated once a player has been spawned
     id_map: HashMap<usize, usize>,
+    game_event_tx: UnboundedSender<(usize, GameEvent)>,
+    game_id: usize,
 }
 
 impl LocalManager {
@@ -50,21 +52,27 @@ impl LocalManager {
         game_event_tx: UnboundedSender<(usize, GameEvent)>,
         game_id: usize,
     ) -> LocalManager {
+        let mut model = Model::new(map);
+
+        // Spawn 4 mobs:
+        for _ in 0..4 {
+            model.queue_mob_spawn();
+        }
+
         LocalManager {
-            model: Model::new(
-                map,
-                Box::new(move |event| game_event_tx.send((game_id, event)).unwrap()),
-            ),
+            model,
             id_map: Default::default(),
+            game_event_tx,
+            game_id,
         }
     }
 
     /// Checks to see if there is a slot available / if there is a free spawnlocation in the game,
     /// if so it will add the player to the spawn queue and return true.
     /// The in game id will be generated once the player has been spawned.
-    fn try_spawn_player(&mut self, temporary_id: usize) -> bool {
+    fn try_spawn_player(&mut self, temporary_id: usize, username: String) -> bool {
         if self.model.players().len() < 8 {
-            self.model.add_client(temporary_id);
+            self.model.add_client(temporary_id, username);
             true
         } else {
             false
@@ -89,7 +97,11 @@ impl LocalManager {
     }
 
     fn tick(&mut self) {
-        self.model.simulate_tick();
+        let tx = &mut self.game_event_tx;
+        let game_id = self.game_id;
+        // TODO: move this callback up a level and get rid of the channel
+        self.model
+            .simulate_tick(|event| tx.send((game_id, event)).unwrap());
     }
 
     fn players(&self) -> &model::PlayerBucket {
@@ -178,8 +190,12 @@ impl GlobalManager {
 
                 // Player died handled the clean up, it will return false if there aren't any
                 // players left in the game (including spawning players)
-                if !game.player_died(player_id) {
+                if !dbg!(game.player_died(player_id)) {
                     self.games.remove(game_id);
+                    self.spectator_tx
+                        .send(SpectatorEvent::GameClosed { game_id })
+                        .await
+                        .unwrap();
                 }
             }
             GameEvent::ProcessTick { game_data, tick } => {
@@ -261,9 +277,9 @@ impl GlobalManager {
         }
     }
 
-    async fn add_player_to_game(&mut self, user_id: usize) -> usize {
+    async fn add_player_to_game(&mut self, user_id: usize, username: String) -> usize {
         for (game_id, game) in self.games.iter_mut() {
-            if game.try_spawn_player(user_id) {
+            if game.try_spawn_player(user_id, username.clone()) {
                 return *game_id;
             }
         }
@@ -279,7 +295,7 @@ impl GlobalManager {
             })
             .await
             .unwrap();
-        assert!(game.try_spawn_player(user_id));
+        assert!(game.try_spawn_player(user_id, username));
         assert!(self.games.insert(i, game).is_none());
 
         println!(
@@ -328,7 +344,7 @@ impl GlobalManager {
                     .await
                     .unwrap();
 
-                let game_id = self.add_player_to_game(user_id).await;
+                let game_id = self.add_player_to_game(user_id, username.clone()).await;
 
                 self.spawning_players.insert(
                     user_id,

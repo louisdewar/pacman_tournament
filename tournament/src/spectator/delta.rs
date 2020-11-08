@@ -40,6 +40,7 @@ pub fn find_entity_deltas<E: Entity>(
 
             if new_direction != old_direction || new_invulnerable != old_invulnerable {
                 metadata_changed.push(MetadataChanged {
+                    position: flatten_coordinate(height, new_pos),
                     metadata: DynamicEntityMetadata {
                         invulnerable: new_invulnerable,
                         direction: new_direction,

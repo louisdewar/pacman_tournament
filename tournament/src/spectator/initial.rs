@@ -1,6 +1,4 @@
-use model::{Bucket, Entity, EntityType, Food, GameData, Grid};
-
-use std::cell::RefCell;
+use model::{GameData, Grid};
 
 use super::message::*;
 
@@ -34,6 +32,8 @@ pub fn create_initial_message(game_id: usize, game_data: &GameData) -> InitialMe
     InitialMessage {
         game_id,
         entities,
+        width: game_data.map.width(),
+        height: game_data.map.height(),
         base_tiles: game_data.map.base_tiles().clone(),
         food: game_data.food.clone(),
     }
