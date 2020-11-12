@@ -41,12 +41,20 @@ pub struct MetadataChanged {
 pub struct DynamicEntityMetadata {
     pub direction: Direction,
     pub invulnerable: bool,
+    /// Players have a live score
+    pub live_score: Option<u32>,
+}
+
+pub struct PlayerStaticMetadata {
+    pub high_score: u32,
+    pub username: String,
 }
 
 pub struct CompleteEntityMetadata {
     pub entity_type: EntityType,
     pub variant: u8,
     pub dynamic: DynamicEntityMetadata,
+    pub player_data: Option<PlayerStaticMetadata>,
 }
 
 pub struct InitialMessage {

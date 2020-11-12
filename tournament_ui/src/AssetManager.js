@@ -3,10 +3,11 @@ import { generalError } from './state/action';
 export default class AssetManager {
     constructor(cb, dispatch) {
         this.assets = {};
-        console.log('constructor');
         const assetPromises = [];
+        this.maxPacman = 8;
+        this.maxGhost = 4;
         // Load pacmen
-        for (let i = 0; i < 1; i++) {
+        for (let i = 0; i < this.maxPacman; i++) {
             assetPromises.push(
                 this.loadAsset(
                     'pacman' + i,
@@ -16,7 +17,7 @@ export default class AssetManager {
         }
 
         // Load ghosts
-        for (let i = 0; i < 1; i++) {
+        for (let i = 0; i < this.maxGhost; i++) {
             assetPromises.push(
                 this.loadAsset(
                     'ghost' + i,
@@ -33,8 +34,6 @@ export default class AssetManager {
         );
         Promise.all(assetPromises)
             .then(() => {
-                console.log('Assets loaded');
-                console.log(this);
                 cb(this);
             })
             .catch(err => {
@@ -67,18 +66,10 @@ export default class AssetManager {
     }
 
     getPacman(variant) {
-        if (this.assets['pacman' + variant]) {
-            return this.assets['pacman' + variant];
-        } else {
-            return this.assets['pacman0'];
-        }
+        return this.assets['pacman' + (variant % this.maxPacman)];
     }
 
     getGhost(variant) {
-        if (this.assets['ghost' + variant]) {
-            return this.assets['ghost' + variant];
-        } else {
-            return this.assets['ghost0'];
-        }
+        return this.assets['ghost' + (variant % this.maxGhost)];
     }
 }

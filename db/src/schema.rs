@@ -5,5 +5,6 @@ table! {
         code -> Text,
         high_score -> Int4,
         live -> Bool,
+        enabled -> Bool,
     }
 }

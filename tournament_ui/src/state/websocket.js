@@ -4,6 +4,7 @@ import {
     gameDelta,
     gameOpened,
     gameClosed,
+    leaderboardUpdate,
 } from './action';
 
 export default class WebsocketManager {
@@ -87,7 +88,10 @@ export default class WebsocketManager {
 
     onmessage(wsMessage) {
         const msg = wsMessage.data;
-        console.debug(msg);
+        if (process.env.NODE_ENV === 'development') {
+            console.debug(msg);
+        }
+
         if (msg[0] === 'i') {
             const [gameIDStr, widthStr, heightStr, initialGameData] = msg
                 .slice(1)
@@ -133,6 +137,22 @@ export default class WebsocketManager {
             const gameID = parseInt(msg.slice(1));
 
             this.store.dispatch(gameClosed(gameID));
+        } else if (msg[0] === 'l') {
+            const leaderboard = msg
+                .slice(1)
+                .split(',')
+                .map(s => {
+                    if (s.length == 0) {
+                        return null;
+                    }
+
+                    const [userID, username, highScore] = s.split('_');
+
+                    return { userID, username, highScore };
+                })
+                .filter(s => !!s);
+
+            this.store.dispatch(leaderboardUpdate(leaderboard));
         } else {
             console.error('Invalid websocket message:', msg);
         }
@@ -337,18 +357,57 @@ function parseNumber(s) {
 
 function parseDynamicMetadata(s) {
     const direction = s[0];
-    const invulnerable = s[1] === 'I';
 
-    return [{ direction, invulnerable }, 2];
+    let live_score = null;
+    let skip = 1;
+    // Score is optional (won't be set for mobs)
+    if (isNumeric(s[skip])) {
+        const [live_score_res, n] = parseNumber(s.slice(skip));
+        skip += n;
+        live_score = live_score_res;
+    }
+
+    const invulnerable = s[skip] === 'I';
+    skip++;
+
+    return [{ direction, invulnerable, live_score }, skip];
 }
 
 function parseMetadata(s) {
+    let skip = 0;
     const [dynamic, dynamicN] = parseDynamicMetadata(s);
+    skip += dynamicN;
 
-    const entityType = s[dynamicN];
-    const variant = parseInt(s[dynamicN + 1]);
+    const entityType = s[skip];
+    const variant = parseInt(s[skip + 1]);
+    skip += 2;
 
-    return [{ dynamic, entityType, variant }, 2 + dynamicN];
+    if (entityType == 'P') {
+        const [usernameLength, usernameLenSkip] = parseNumber(s.slice(skip));
+        skip += usernameLenSkip;
+
+        if (s[skip] !== '-') {
+            throw new Error('Expected - after username len');
+        }
+        skip++;
+        const username = s.substr(skip, usernameLength);
+        skip += usernameLength;
+        const [prevHighScore, scoreN] = parseNumber(s.slice(skip));
+        skip += scoreN;
+        if (s[skip] !== ',') {
+            throw new Error(
+                'Missing comma after metadata despite it being a player'
+            );
+        }
+        skip++;
+
+        return [
+            { dynamic, entityType, variant, username, prevHighScore },
+            skip,
+        ];
+    } else {
+        return [{ dynamic, entityType, variant }, skip];
+    }
 }
 
 function isNumeric(c) {

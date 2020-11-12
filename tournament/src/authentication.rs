@@ -3,7 +3,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::competitor::IncomingEvent as CompetitorIncomingEvent;
 use crate::competitor::ManagerEvent as CompetitorManagerEvent;
-use crate::{db, PgPool};
+use crate::PgPool;
 
 #[derive(Clone, Debug)]
 pub enum AuthenticationEvent {
@@ -22,6 +22,7 @@ pub enum AuthenticationFailedReason {
     PlayerInGame,
     BadCode,
     PlayerNotFound,
+    PlayerNotEnabled,
 }
 
 impl AuthenticationFailedReason {
@@ -32,6 +33,7 @@ impl AuthenticationFailedReason {
             PlayerInGame => "You are already in a game, or waiting to spawn in one".to_string(),
             BadCode => "The code does not match your username".to_string(),
             PlayerNotFound => "Your username does not exist".to_string(),
+            PlayerNotEnabled => "Your account is not enabled".to_string(),
         }
     }
 }
@@ -56,7 +58,7 @@ impl AuthenticationManager {
         game_tx: Sender<CompetitorManagerEvent>,
         authentication_rx: Receiver<AuthenticationRequest>,
         db_pool: PgPool,
-    ) {
+    ) -> tokio::task::JoinHandle<()> {
         let mut manager = AuthenticationManager {
             competitor_tx,
             game_tx,
@@ -68,7 +70,7 @@ impl AuthenticationManager {
             while let Some(request) = manager.authentication_rx.next().await {
                 manager.authenticate_user(request);
             }
-        });
+        })
     }
 
     /// This functions exists immediately but spawns a thread to handle the blocking database call.
@@ -95,6 +97,19 @@ impl AuthenticationManager {
                                 AuthenticationEvent::BadAuthentication {
                                     temporary_id: request.temporary_id,
                                     reason: AuthenticationFailedReason::BadCode,
+                                },
+                            ))
+                            .await
+                            .unwrap();
+                        return;
+                    }
+
+                    if !user.enabled {
+                        competitor_tx
+                            .send(CompetitorIncomingEvent::Authentication(
+                                AuthenticationEvent::BadAuthentication {
+                                    temporary_id: request.temporary_id,
+                                    reason: AuthenticationFailedReason::PlayerNotEnabled,
                                 },
                             ))
                             .await

@@ -13,6 +13,7 @@ export default function Game({
     gameID,
 }) {
     const [canvas, setCanvas] = useState(null);
+    const [leaderboard, setLeaderboard] = useState({});
 
     useEffect(() => {
         if (canvas === null || assets === null) {
@@ -29,6 +30,8 @@ export default function Game({
         ctx.scale(size, size);
         ctx.save();
 
+        const newLeaderboard = {};
+
         for (let x = 0; x < width; x++) {
             for (let y = 0; y < height; y++) {
                 ctx.restore();
@@ -37,10 +40,10 @@ export default function Game({
                 const baseTile = baseTiles[x * height + y];
                 switch (baseTile) {
                 case 'X':
-                    ctx.fillStyle = 'black';
+                    ctx.fillStyle = '#1919A6';
                     break;
                 case 'L':
-                    ctx.fillStyle = 'green';
+                    ctx.fillStyle = 'black';
                     break;
                 default:
                     throw new Error('Invalid base tile ' + baseTile);
@@ -62,29 +65,29 @@ export default function Game({
 
                 const entity = entities[x * height + y];
                 if (entity) {
-                    // We need the origin of rotation to be in the middle of the square
-                    ctx.translate(0.5, 0.5);
-                    // assets are designed such that they are facing right
-                    switch (entity.dynamic.direction) {
-                    case 'N':
-                        ctx.rotate(1.5 * Math.PI);
-                        break;
-                    case 'E':
-                        break;
-                    case 'S':
-                        ctx.rotate(0.5 * Math.PI);
-                        break;
-                    case 'W':
-                        ctx.rotate(1.0 * Math.PI);
-                        break;
-                    default:
-                        throw new Error('Invalid rotation');
-                    }
-
-                    ctx.translate(-0.5, -0.5);
                     switch (entity.entityType) {
                     case 'P':
-                        console.log(`player at (${x}, ${y})`);
+                        // We need the origin of rotation to be in the middle of the square
+                        ctx.translate(0.5, 0.5);
+                        // assets are designed such that they are facing right
+                        switch (entity.dynamic.direction) {
+                        case 'N':
+                            ctx.rotate(1.5 * Math.PI);
+                            break;
+                        case 'E':
+                            break;
+                        case 'S':
+                            ctx.rotate(0.5 * Math.PI);
+                            break;
+                        case 'W':
+                            ctx.rotate(1.0 * Math.PI);
+                            break;
+                        default:
+                            throw new Error('Invalid rotation');
+                        }
+
+                        ctx.translate(-0.5, -0.5);
+                        newLeaderboard[entity.variant] = entity;
                         ctx.drawImage(
                             assets.getPacman(entity.variant),
                             0,
@@ -108,11 +111,23 @@ export default function Game({
                 }
             }
         }
+        setLeaderboard(newLeaderboard);
     }, [food, entities, baseTiles, canvas, assets]);
 
     return (
         <div className={classnames('Game', { loaded: assets !== null })}>
             <canvas ref={ref => setCanvas(ref)}></canvas>
+            <ul>
+                {Object.keys(leaderboard).map(key => {
+                    const player = leaderboard[key];
+                    return (
+                        <li key={key} className={classnames('variant' + key)}>
+                            {player.username} ({player.dynamic.live_score})
+                            <span>previous best {player.prevHighScore}</span>
+                        </li>
+                    );
+                })}
+            </ul>
             <p>ID: {gameID}</p>
         </div>
     );

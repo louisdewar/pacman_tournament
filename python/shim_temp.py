@@ -65,35 +65,30 @@ class Ai:
             'E' => Eat
             'S' => Stay
         """
-        print('----' * 3)
-        for y in range(4):
-            for x in range(3):
-                entity = 'M' if game[x][y]['mob'] else 'P' if game[x][y]['player'] else '_'
-                # Food is either F = Fruit or P = Powerpill or None (no food)
-                food = game[x][y]['food'] if game[x][y]['food'] != None else '_'
-
-                print(' {}{}{} '.format(game[x][y]['base'], entity, food), end='')
-            print('')
-        print('----' * 3)
-        # Information about the current player (always in 1,2)
-        print(game[1][2]['player'])
-
         if game[1][1]['base'] != 'L':
-            print('We can\'t advance so turning right')
             return 'R'
 
-        return 'F'
+        if not game[1][1]['player']:
+            return 'F';
+
+        return 'S'
 
 
 if __name__ =='__main__':
     try:
         ip = sys.argv[1]
         port = sys.argv[2]
-        username = sys.argv[3]
-        code = sys.argv[4]
+        userid = int(sys.argv[3])
     except IndexError:
-        print("Usage: python3 shim.py [ip] [port] [username] [code]")
+        print("Usage: python3 shim.py [ip] [port] [user id]")
         sys.exit(1)
+
+    f = open("creds", "r")
+
+    users = f.read().split('\n')
+    user = users[userid - 1].split(' ')
+    username = user[0]
+    code = user[1]
 
     ai = Ai(ip, port, username, code)
 

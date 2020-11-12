@@ -113,6 +113,21 @@ impl Map {
         }
     }
 
+    /// Given that the two provided points are touching what is the direction.
+    /// This works like the reverse of calc forward
+    pub fn calc_direction(&self, from: (u16, u16), to: (u16, u16)) -> crate::Direction {
+        use crate::Direction::*;
+        let delta = (to.0 as i16 - from.0 as i16, to.1 as i16 - from.1 as i16);
+
+        match delta {
+            (0, -1) => North,
+            (1, 0) => East,
+            (0, 1) => South,
+            (-1, 0) => West,
+            _ => panic!("When calculating direction point was not adjacent"),
+        }
+    }
+
     /// Applies the given direction to the coordinates, returns None if the coordinates would
     /// be off of the map
     pub fn calc_foward(&self, x: u16, y: u16, direction: &crate::Direction) -> Option<(u16, u16)> {

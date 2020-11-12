@@ -1,0 +1,10 @@
+[package]
+name = "admin"
+version = "0.1.0"
+authors = ["louisdewardt <contact@louis.dewardt.uk>"]
+edition = "2018"
+
+[dependencies]
+db = { path = "../db" }
+clap = { version = "3.0.0-beta.1", features = ["yaml"] }
+rand = "0.7"

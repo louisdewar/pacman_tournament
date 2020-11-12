@@ -1,7 +1,7 @@
 use tokio::stream::StreamExt;
 use tokio::sync::mpsc::Receiver;
 
-use crate::{db, PgPool};
+use crate::PgPool;
 
 #[derive(Debug, Clone)]
 pub struct ScoreUpdate {
@@ -11,19 +11,18 @@ pub struct ScoreUpdate {
 
 pub struct ScoreManager {
     rx: Receiver<ScoreUpdate>,
-    // high_scores: HashMap<usize, u32>,
     pool: PgPool,
 }
 
 impl ScoreManager {
-    pub fn start(pool: PgPool, rx: Receiver<ScoreUpdate>) {
+    pub fn start(pool: PgPool, rx: Receiver<ScoreUpdate>) -> tokio::task::JoinHandle<()> {
         let mut manager = ScoreManager { rx, pool };
 
         tokio::task::spawn(async move {
             while let Some(update) = manager.rx.next().await {
                 manager.handle_score_update(update);
             }
-        });
+        })
     }
 
     fn handle_score_update(&self, update: ScoreUpdate) {
@@ -42,19 +41,3 @@ impl ScoreManager {
         });
     }
 }
-
-// pub enum IncomingScoreEvent {
-//     Update {
-//         game_id: usize,
-//         players: Bucket<Player>,
-//         /// Maps from in game player id to user id
-//         id_map: HashMap<usize, usize>,
-//     },
-//     PlayerConnected {
-//         high_score: u32,
-//         user_id: usize,
-//     },
-//     PlayerDisconnected {
-//         user_id: usize,
-//     },
-// }

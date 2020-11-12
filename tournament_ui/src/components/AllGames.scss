@@ -6,6 +6,8 @@
   right: 0;
   overflow-y: auto;
 
+  text-align: center;
+
   background-color: #2980b9;
 
   color: #ecf0f1;
@@ -23,12 +25,9 @@
   }
 
   &.waiting h2 {
-    position: absolute;
+    display: inline-block;
     max-width: 700px;
     font-size: 40px;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
   }
 
 }

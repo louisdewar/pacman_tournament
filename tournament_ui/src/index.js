@@ -7,7 +7,9 @@ import store from './state/store';
 
 import WebsocketManager from './state/websocket';
 
-const websocket = new WebsocketManager('ws://localhost:3002', store);
+const websocketAddress =
+    process.env.REACT_APP_WEBSOCKET_URL || 'ws://localhost:3002';
+const websocket = new WebsocketManager(websocketAddress, store);
 websocket.connect();
 
 ReactDOM.render(

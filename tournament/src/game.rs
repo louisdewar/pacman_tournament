@@ -9,8 +9,11 @@ use crate::score::ScoreUpdate;
 use crate::spectator::SpectatorEvent;
 
 use tokio::stream::StreamExt;
-use tokio::sync::mpsc::{unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{interval, Interval};
+
+const MAX_MOBS: usize = 8;
+const MAX_PLAYERS: usize = 8;
 
 pub struct Player {
     username: String,
@@ -26,8 +29,6 @@ pub struct GlobalManager {
     ingame_players: HashMap<usize, Player>,
     spawning_players: HashMap<usize, Player>,
     games: Bucket<LocalManager>,
-    game_event_rx: UnboundedReceiver<(usize, GameEvent)>,
-    game_event_tx: UnboundedSender<(usize, GameEvent)>,
     tick_interval: Interval,
     rx: Receiver<CompetitorManagerEvent>,
     competitor_tx: Sender<CompetitorIncomingEvent>,
@@ -42,27 +43,16 @@ struct LocalManager {
     /// Maps from the in game player id to the user id
     /// It is only populated once a player has been spawned
     id_map: HashMap<usize, usize>,
-    game_event_tx: UnboundedSender<(usize, GameEvent)>,
     game_id: usize,
 }
 
 impl LocalManager {
-    fn new(
-        map: Map,
-        game_event_tx: UnboundedSender<(usize, GameEvent)>,
-        game_id: usize,
-    ) -> LocalManager {
-        let mut model = Model::new(map);
-
-        // Spawn 4 mobs:
-        for _ in 0..4 {
-            model.queue_mob_spawn();
-        }
+    fn new(map: Map, game_id: usize) -> LocalManager {
+        let model = Model::new(map, MAX_MOBS);
 
         LocalManager {
             model,
             id_map: Default::default(),
-            game_event_tx,
             game_id,
         }
     }
@@ -71,7 +61,7 @@ impl LocalManager {
     /// if so it will add the player to the spawn queue and return true.
     /// The in game id will be generated once the player has been spawned.
     fn try_spawn_player(&mut self, temporary_id: usize, username: String) -> bool {
-        if self.model.players().len() < 8 {
+        if self.total_player_count() < MAX_PLAYERS {
             self.model.add_client(temporary_id, username);
             true
         } else {
@@ -79,29 +69,43 @@ impl LocalManager {
         }
     }
 
-    fn remove_client(&mut self, player_id: usize) -> model::Player {
-        self.model.remove_client(player_id)
+    fn total_player_count(&self) -> usize {
+        self.model.players().len() + self.model.spawning_players().len()
     }
 
-    // This functions exists because of the issue with channels such that this struct only knows
-    // when a player died because of global manager, in future tick will take in a callback and
-    // then this method will have complete control.
-    fn player_died(&mut self, player_id: usize) -> bool {
+    fn remove_client(&mut self, player_id: usize) -> model::Player {
         self.id_map.remove(&player_id);
-
-        self.model.players().len() > 0 || self.model.spawning_players().len() > 0
+        self.model.remove_client(player_id)
     }
 
     fn play_action(&mut self, player_id: usize, action: Action, tick: u32) {
         self.model.player_action(player_id, action, tick);
     }
 
-    fn tick(&mut self) {
-        let tx = &mut self.game_event_tx;
-        let game_id = self.game_id;
-        // TODO: move this callback up a level and get rid of the channel
-        self.model
-            .simulate_tick(|event| tx.send((game_id, event)).unwrap());
+    fn should_close(&self) -> bool {
+        self.total_player_count() == 0
+    }
+
+    fn tick<F: FnMut(GameEvent)>(&mut self, mut cb: F) {
+        let id_map = &mut self.id_map;
+        self.model.simulate_tick(|event| {
+            // This is the only way we find out about dead players, we have to update the id_map
+            // when they die
+            match event {
+                // Pass along the event to the callback with the user id instead
+                GameEvent::PlayerDied {
+                    player_id,
+                    final_score,
+                } => {
+                    let user_id = id_map.remove(&player_id).unwrap();
+                    cb(GameEvent::PlayerDied {
+                        player_id: user_id,
+                        final_score,
+                    })
+                }
+                event => cb(event),
+            }
+        });
     }
 
     fn players(&self) -> &model::PlayerBucket {
@@ -116,17 +120,13 @@ impl GlobalManager {
         score_tx: Sender<ScoreUpdate>,
         spectator_tx: Sender<SpectatorEvent>,
         map: Map,
-    ) {
+    ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
-            let (game_event_tx, game_event_rx) = unbounded_channel();
-
             let mut manager = GlobalManager {
                 ingame_players: Default::default(),
                 spawning_players: Default::default(),
                 games: Default::default(),
-                game_event_rx,
-                game_event_tx,
-                tick_interval: interval(Duration::from_secs(1)),
+                tick_interval: interval(Duration::from_millis(500)),
                 rx,
                 competitor_tx,
                 score_tx,
@@ -139,36 +139,54 @@ impl GlobalManager {
                     Some(event) = manager.rx.next() => {
                         manager.handle_incoming_event(event).await;
                     }
-                    Some((game_id, event)) = manager.game_event_rx.next() => {
-                        manager.handle_game_event(game_id, event).await;
-                    }
                     _ = manager.tick_interval.tick() => {
-                        manager.tick_games();
+                        manager.tick_games().await;
                     }
                 }
             }
-        });
+        })
     }
 
-    fn tick_games(&mut self) {
-        // TODO: consider change interval to instant and then advance by a second only once all the
+    async fn tick_games(&mut self) {
+        // TODO: consider changing interval to instant and then advance by a second only once all the
         // games have been processed.
         // Having an instant like this will greatly simplify automatically advancing the tick when
         // all actions are in.
-        for (_game_id, game) in self.games.iter_mut() {
-            game.tick()
+        let mut game_events = Vec::new();
+        let mut closing_games = Vec::new();
+        for (game_id, game) in self.games.iter_mut() {
+            game.tick(|event| game_events.push((*game_id, event)));
+
+            if game.should_close() {
+                closing_games.push(*game_id);
+            }
         }
+
+        for (game_id, event) in game_events {
+            self.handle_game_event(game_id, event).await;
+        }
+
+        for game_id in closing_games {
+            self.close_game(game_id).await;
+        }
+    }
+
+    async fn close_game(&mut self, game_id: usize) {
+        println!("Game {} closed", game_id);
+        self.games.remove(game_id);
+        self.spectator_tx
+            .send(SpectatorEvent::GameClosed { game_id })
+            .await
+            .unwrap();
     }
 
     async fn handle_game_event(&mut self, game_id: usize, event: GameEvent) {
         match event {
             GameEvent::PlayerDied {
-                player_id,
+                // This event is mapped such that the player id is the user id
+                player_id: user_id,
                 final_score,
             } => {
-                let game = self.games.get_mut(game_id).unwrap();
-                let user_id = *game.id_map.get(&player_id).unwrap();
-
                 self.competitor_tx
                     .send(CompetitorIncomingEvent::Game(ManagerEvent::PlayerDied {
                         user_id,
@@ -177,26 +195,22 @@ impl GlobalManager {
                     .await
                     .unwrap();
 
-                self.ingame_players.remove(&user_id);
+                let player = if let Some(player) = self.ingame_players.remove(&user_id) {
+                    player
+                } else {
+                    println!("Player with user id {} doesn't exist but they died (they may have very recently disconnected)", user_id);
+                    return;
+                };
+                let in_game_player_id = player.in_game_player_id;
 
                 self.spectator_tx
                     .send(SpectatorEvent::PlayerLeft {
                         game_id,
                         user_id,
-                        in_game_player_id: player_id,
+                        in_game_player_id,
                     })
                     .await
                     .unwrap();
-
-                // Player died handled the clean up, it will return false if there aren't any
-                // players left in the game (including spawning players)
-                if !dbg!(game.player_died(player_id)) {
-                    self.games.remove(game_id);
-                    self.spectator_tx
-                        .send(SpectatorEvent::GameClosed { game_id })
-                        .await
-                        .unwrap();
-                }
             }
             GameEvent::ProcessTick { game_data, tick } => {
                 // it's possible for the game to be deleted if there are no players but the tick
@@ -254,6 +268,8 @@ impl GlobalManager {
 
                 let mut player = self.spawning_players.remove(&user_id).unwrap();
                 player.in_game_player_id = in_game_player_id;
+                let high_score = player.high_score;
+                let username = player.username.clone();
                 self.ingame_players.insert(user_id, player);
 
                 self.competitor_tx
@@ -270,6 +286,8 @@ impl GlobalManager {
                         user_id,
                         in_game_player_id,
                         game_id,
+                        prev_high_score: high_score,
+                        username,
                     })
                     .await
                     .unwrap();
@@ -286,7 +304,7 @@ impl GlobalManager {
 
         let i = self.games.minimum_available_id();
 
-        let mut game = LocalManager::new(self.map.clone(), self.game_event_tx.clone(), i);
+        let mut game = LocalManager::new(self.map.clone(), i);
         let game_data = game.model.data().clone();
         self.spectator_tx
             .send(SpectatorEvent::GameOpened {
@@ -387,25 +405,11 @@ impl GlobalManager {
                 game_id,
                 in_game_player_id,
             } => {
-                let game = self.games.get_mut(game_id).unwrap();
-                game.remove_client(in_game_player_id);
-
-                assert!(
-                    self.ingame_players.remove(&user_id).is_some(),
-                    "Player disconnected but they weren't in a game"
-                );
-
-                if !game.player_died(in_game_player_id) {
-                    println!(
-                        "After {} left game {} was empty so removing it",
-                        user_id, game_id
-                    );
-                    self.games.remove(game_id);
-
-                    self.spectator_tx
-                        .send(SpectatorEvent::GameClosed { game_id })
-                        .await
-                        .unwrap();
+                if let Some(game) = self.games.get_mut(game_id) {
+                    game.remove_client(in_game_player_id);
+                    self.ingame_players.remove(&user_id);
+                } else {
+                    println!("Player disconnected from game which they were not a part of");
                 }
             }
         }

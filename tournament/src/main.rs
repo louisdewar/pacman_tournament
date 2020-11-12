@@ -6,7 +6,6 @@ extern crate diesel_migrations;
 mod authentication;
 mod competitor;
 mod connection;
-mod db;
 mod game;
 mod score;
 mod spectator;
@@ -23,7 +22,7 @@ pub type PgPool = r2d2::Pool<ConnectionManager<PgConnection>>;
 
 use tokio::sync::mpsc::channel;
 
-embed_migrations!();
+embed_migrations!("../db/migrations/");
 
 #[tokio::main]
 async fn main() {
@@ -53,7 +52,7 @@ async fn main() {
     .await
     .expect("Couldn't start competitor manager");
 
-    authentication::AuthenticationManager::start(
+    let authentication_handle = authentication::AuthenticationManager::start(
         competitor_tx.clone(),
         game_tx,
         authentication_rx,
@@ -64,10 +63,20 @@ async fn main() {
 
     println!("Map has dimensions w{}xh{}", map.width(), map.height());
 
-    game::GlobalManager::start(game_rx, competitor_tx, score_tx, spectator_tx, map);
-    score::ScoreManager::start(pool, score_rx);
+    let game_handle =
+        game::GlobalManager::start(game_rx, competitor_tx, score_tx, spectator_tx, map);
+    let score_handle = score::ScoreManager::start(pool.clone(), score_rx);
     // This awaits the server starting only
-    spectator::Manager::start("0.0.0.0:3002", spectator_rx).await;
+    let spectator_handle =
+        spectator::Manager::start("0.0.0.0:3002", spectator_rx, pool.clone()).await;
 
-    competitor_handle.await.expect("Competitor handle failed");
+    tokio::select! {
+        _ = competitor_handle => {}
+        _ = authentication_handle => {}
+        _ = game_handle => {}
+        _ = score_handle => {}
+        _ = spectator_handle => {}
+    }
+
+    println!("Closing due to crash");
 }

@@ -83,6 +83,7 @@ impl Manager {
             loop {
                 tokio::select! {
                     Ok((stream, address)) = manager.listener.accept() => {
+                        stream.set_nodelay(true).expect("Couldn't set nodelay on TCP stream");
                         manager.handle_incoming_connection(stream, address).await;
                     }
                     Some(event) = manager.unauthenticated.next() => {

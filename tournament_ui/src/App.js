@@ -12,6 +12,7 @@ function App() {
     const error = useSelector(state => state['error']);
     const websocketStatus = useSelector(state => state['connection_status']);
     const games = useSelector(state => state['games']);
+    const leaderboard = useSelector(state => state['leaderboard']);
     const dispatch = useDispatch();
 
     const [assets, setAssets] = useState(null);
@@ -31,7 +32,9 @@ function App() {
     }
 
     if (websocketStatus === 'CONNECTED') {
-        return <AllGames assets={assets} games={games} />;
+        return (
+            <AllGames assets={assets} games={games} leaderboard={leaderboard} />
+        );
     } else if (websocketStatus === 'LOADING') {
         return <div className="Loading">Connecting...</div>;
     }

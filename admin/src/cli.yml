@@ -1,0 +1,24 @@
+name: pt_admin
+subcommands:
+  - enable:
+      about: Enables all user accounts to login to the tournament
+  - list:
+      about: List all user accounts with their username, code and high score
+  - disable:
+      about: Disables all user accounts to login
+  - register:
+      about: Registers the given username creating an account with an automatically generated code.
+      args:
+        - USERNAME:
+            about: The username of the user to register
+            index: 1
+            required: true
+        - DISABLED:
+            about: If set it creates the account but it is disabled and cannot login until it is enabled again.
+            long: disabled
+  - leaderboard:
+      about: Returns the list of usernames and scores sorted in descending order of score.
+      args:
+        - LIMIT:
+            about: An optional limit to stop after the top n users
+            takes_value: true

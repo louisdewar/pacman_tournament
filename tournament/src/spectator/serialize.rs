@@ -95,6 +95,9 @@ impl Serialize for EntityType {
 impl Serialize for DynamicEntityMetadata {
     fn serialize(&self, out: &mut String) {
         self.direction.serialize(out);
+        if let Some(live_score) = self.live_score {
+            out.push_str(&format!("{}", live_score));
+        }
         out.push(if self.invulnerable { 'I' } else { 'V' });
     }
 }
@@ -104,6 +107,21 @@ impl Serialize for CompleteEntityMetadata {
         self.dynamic.serialize(out);
         self.entity_type.serialize(out);
         out.push_str(&format!("{}", self.variant));
+        if let Some(player_metadata) = &self.player_data {
+            debug_assert!(self.entity_type == EntityType::Player);
+            player_metadata.serialize(out);
+        }
+    }
+}
+
+impl Serialize for PlayerStaticMetadata {
+    fn serialize(&self, out: &mut String) {
+        out.push_str(&format!(
+            "{}-{}{},",
+            self.username.len(),
+            self.username,
+            self.high_score
+        ));
     }
 }
 
@@ -197,6 +215,15 @@ impl Serialize for InitialMessage {
     }
 }
 
+impl Serialize for db::model::LeaderboardUser {
+    fn serialize(&self, out: &mut String) {
+        out.push_str(&format!(
+            "{}_{}_{},",
+            self.id, self.username, self.high_score
+        ));
+    }
+}
+
 // Since Serialize is private we must provide functions for external users to call
 
 pub fn serialized_initial(initial: &InitialMessage) -> String {
@@ -209,6 +236,13 @@ pub fn serialized_initial(initial: &InitialMessage) -> String {
 pub fn serialized_delta(delta: &DeltaMessage) -> String {
     let mut out = String::new();
     delta.serialize(&mut out);
+
+    out
+}
+
+pub fn serialize_leaderboard(leaderboard: &Vec<db::model::LeaderboardUser>) -> String {
+    let mut out = String::from("l");
+    leaderboard.serialize(&mut out);
 
     out
 }

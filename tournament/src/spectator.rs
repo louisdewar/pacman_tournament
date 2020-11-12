@@ -5,10 +5,13 @@ use model::GameData;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::PgPool;
+
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio::stream::StreamExt;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::Receiver;
+use tokio::time::{interval, Interval};
 
 use futures_util::SinkExt;
 
@@ -16,6 +19,8 @@ mod delta;
 mod initial;
 mod message;
 mod serialize;
+
+const LEADERBOARD_LIMIT: i64 = 10;
 
 enum ListenFilter {
     /// All games + top 10 leaderboard
@@ -45,7 +50,7 @@ impl Spectator {
         stream: TcpStream,
         filter: ListenFilter,
         rx: broadcast::Receiver<BroadcastEvent>,
-        games: HashMap<usize, (HashMap<usize, usize>, GameData)>,
+        games: HashMap<usize, (HashMap<usize, Player>, GameData)>,
     ) {
         tokio::task::spawn(async move {
             let socket = if let Ok(socket) = tokio_tungstenite::accept_async(stream).await {
@@ -57,9 +62,9 @@ impl Spectator {
 
             let mut spectator = Spectator { socket, filter, rx };
 
-            for (game_id, (_id_map, game_data)) in games {
+            for (game_id, (id_map, game_data)) in games {
                 let serialized_initial = serialize::serialized_initial(
-                    &initial::create_initial_message(game_id, &game_data),
+                    &initial::create_initial_message(game_id, &game_data, &id_map),
                 );
 
                 if spectator
@@ -161,21 +166,45 @@ impl Spectator {
                     }
                 }
             }
+            BroadcastEvent::LeaderboardUpdate { serialized } => {
+                if self
+                    .socket
+                    .send(WebSocketMessage::Text(serialized))
+                    .await
+                    .is_err()
+                {
+                    println!("Closing socket since there was an error sending leaderboard update");
+                    let _ = self.socket.close(None);
+                }
+            }
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct Player {
+    user_id: usize,
+    username: String,
+    prev_high_score: u32,
 }
 
 /// Manages connections to the websocket clients (spectators)
 pub struct Manager {
     /// The inner hashmap if a map from the in game player id to the user id.
-    games: HashMap<usize, (HashMap<usize, usize>, GameData)>,
+    games: HashMap<usize, (HashMap<usize, Player>, GameData)>,
     ws_listener: TcpListener,
     rx: Receiver<SpectatorEvent>,
     broadcaster: broadcast::Sender<BroadcastEvent>,
+    score_update_interval: Interval,
+    pool: PgPool,
 }
 
 impl Manager {
-    pub async fn start<A: ToSocketAddrs>(addr: A, rx: Receiver<SpectatorEvent>) {
+    pub async fn start<A: ToSocketAddrs>(
+        addr: A,
+        rx: Receiver<SpectatorEvent>,
+        pool: PgPool,
+    ) -> tokio::task::JoinHandle<()> {
         let (broadcaster, _) = broadcast::channel(5);
 
         let mut manager = Manager {
@@ -185,6 +214,8 @@ impl Manager {
                 .expect("Failed to start the spectator ws server"),
             rx,
             broadcaster,
+            score_update_interval: interval(std::time::Duration::from_millis(3000)),
+            pool,
         };
 
         tokio::task::spawn(async move {
@@ -196,8 +227,27 @@ impl Manager {
                     Some(event) = manager.rx.next() => {
                         manager.handle_event(event);
                     }
+                    _ = manager.score_update_interval.tick() => {
+                        manager.send_score_update()
+                    }
                 }
             }
+        })
+    }
+
+    fn send_score_update(&self) {
+        let broadcaster = self.broadcaster.clone();
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = pool
+                .get()
+                .expect("Score manager lost connection to the database");
+
+            let leaderboard = db::actions::get_leaderboard(&conn, Some(LEADERBOARD_LIMIT));
+            let _ = broadcaster.send(BroadcastEvent::LeaderboardUpdate {
+                serialized: serialize::serialize_leaderboard(&leaderboard),
+            });
         });
     }
 
@@ -219,7 +269,7 @@ impl Manager {
     fn handle_event(&mut self, event: SpectatorEvent) {
         match event {
             SpectatorEvent::GameOpened { game_data, game_id } => {
-                let initial = initial::create_initial_message(game_id, &game_data);
+                let initial = initial::create_initial_message(game_id, &game_data, &HashMap::new());
                 let _ = self.broadcaster.send(BroadcastEvent::GameOpened {
                     game_id,
                     serialized_initial: Arc::new(serialize::serialized_initial(&initial)),
@@ -246,12 +296,21 @@ impl Manager {
                 user_id,
                 in_game_player_id,
                 game_id,
+                prev_high_score,
+                username,
             } => {
                 self.games
                     .get_mut(&game_id)
                     .expect("Player spawned in game which didn't exist")
                     .0
-                    .insert(in_game_player_id, user_id);
+                    .insert(
+                        in_game_player_id,
+                        Player {
+                            username,
+                            prev_high_score,
+                            user_id,
+                        },
+                    );
             }
             SpectatorEvent::PlayerLeft {
                 game_id,
@@ -273,8 +332,8 @@ impl Manager {
                     .get_mut(&game_id)
                     .expect("Tick happened in game which didn't exist");
 
-                let delta_message = delta::create_delta_message(game_id, &game.1, &new_game_data);
-                let food = new_game_data.food.clone();
+                let delta_message =
+                    delta::create_delta_message(game_id, &game.1, &new_game_data, &game.0);
                 game.1 = new_game_data;
 
                 self.send_delta(game_id, delta_message);
@@ -304,6 +363,9 @@ pub enum BroadcastEvent {
     GameClosed {
         game_id: usize,
     },
+    LeaderboardUpdate {
+        serialized: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -319,6 +381,8 @@ pub enum SpectatorEvent {
         user_id: usize,
         in_game_player_id: usize,
         game_id: usize,
+        prev_high_score: u32,
+        username: String,
     },
     PlayerLeft {
         user_id: usize,

@@ -54,6 +54,11 @@ function gameReducer(newState = {}, action) {
         for (let entity of entity_moved) {
             const src = game['entities'][entity['src']];
 
+            if (game.entities[entity.dest] != null) {
+                console.log(entity, game);
+                throw new Error('dest not null');
+            }
+
             game['entities'][entity['src']] = null;
             game['entities'][entity['dest']] = src;
         }
@@ -102,6 +107,9 @@ export default function reducer(state = {}, action) {
         return newState;
     case 'GENERAL_ERROR':
         return { error: action['error'], errorType: action['errorType'] };
+    case 'LEADERBOARD_UPDATE':
+        newState['leaderboard'] = action['leaderboard'];
+        return newState;
     default:
         if (action.type.startsWith('GAME_')) {
             gameReducer(newState, action);

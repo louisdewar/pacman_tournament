@@ -35,6 +35,10 @@ export function gameClosed(gameID) {
     return { gameID, type: 'GAME_CLOSED' };
 }
 
+export function leaderboardUpdate(leaderboard) {
+    return { leaderboard, type: 'LEADERBOARD_UPDATE' };
+}
+
 export function gameDelta(
     gameID,
     entity_died,

@@ -48,9 +48,7 @@ pub enum GameEvent {
 pub struct Model {
     data: GameData,
     spawning_players: VecDeque<(usize, String)>,
-    // In future we may store metadata here, if we never decide to we can just do
-    // self.data.mobs.len() and work out how many to spawn that way.
-    spawning_mobs: VecDeque<()>,
+    desired_mob_count: usize,
     tick: u32,
     tick_start: Instant,
     /// The number of players we're waiting so submit an action
@@ -58,7 +56,7 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn new(map: Map) -> Model {
+    pub fn new(map: Map, desired_mob_count: usize) -> Model {
         Model {
             data: GameData {
                 entities: Grid::fill_with_clone(None, map.width() as usize, map.height() as usize),
@@ -69,8 +67,8 @@ impl Model {
             },
             tick: 0,
             spawning_players: VecDeque::new(),
-            spawning_mobs: VecDeque::new(),
             tick_start: Instant::now(),
+            desired_mob_count,
             waiting_players: 0,
         }
     }
@@ -112,12 +110,7 @@ impl Model {
 
         self.add_entity((x, y), EntityIndex::new_mob(id));
 
-        println!("Spawned mob");
         true
-    }
-
-    pub fn queue_mob_spawn(&mut self) {
-        self.spawning_mobs.push_back(());
     }
 
     /// Takes in a spawn location and either selects one of the specified points or if the spawn
@@ -183,7 +176,7 @@ impl Model {
     /// 3. Spawn new players (if there is space)
     ///
     /// TODO: make tick take in a closure to remove the global callback
-    pub fn simulate_tick<F: Fn(GameEvent)>(&mut self, callback: F) {
+    pub fn simulate_tick<F: FnMut(GameEvent)>(&mut self, mut callback: F) {
         self.tick += 1;
         self.tick_start = Instant::now();
 
@@ -259,10 +252,9 @@ impl Model {
             }
         }
 
-        while let Some(()) = self.spawning_mobs.pop_front() {
-            if self.spawn_mob() {
-            } else {
-                self.spawning_mobs.push_front(());
+        // Spawn as many as possible up to the entity count
+        while self.mobs().len() < self.desired_mob_count {
+            if !self.spawn_mob() {
                 break;
             }
         }
@@ -271,7 +263,11 @@ impl Model {
         // start of this function no network messages we're able to be processed which is the case
         // because this is single threaded)
         self.waiting_players = self.data.players.len();
-        self.network_process_tick(callback);
+
+        callback(GameEvent::ProcessTick {
+            game_data: self.data.clone(),
+            tick: self.tick,
+        })
     }
 
     pub fn tick_count(&self) -> u32 {
@@ -301,13 +297,6 @@ impl Model {
     /// The number of players that we're waiting for their action
     pub fn waiting_players(&self) -> usize {
         self.waiting_players
-    }
-
-    fn network_process_tick<F: Fn(GameEvent)>(&mut self, callback: F) {
-        callback(GameEvent::ProcessTick {
-            game_data: self.data.clone(),
-            tick: self.tick,
-        })
     }
 
     /// Adds the given username and temporary id to the list of spawning players.

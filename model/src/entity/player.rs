@@ -71,9 +71,111 @@ impl Player {
                 self.score += 10;
             }
             Food::PowerPill => {
-                self.score += 50;
+                self.score += 100;
                 self.has_powerpill = true;
             }
+        }
+    }
+
+    /// Simulates the player moving from their current location in the provided direction and
+    /// attacking the entity if there is on there.
+    /// It will not allow the player to move forward if it is blocked by terrain (i.e. a wall)
+    /// It will move the player if the attack is successful / there was no entity (both with
+    /// self.pos and with the entity grid).
+    /// If the player attacks a mob and the player is not using a power pill they will die,
+    /// otherwise the mob will die.
+    /// This will handle killing the enemy player if there is one but it will check to make sure
+    /// that the player isn't invulnerable.
+    /// It will also simulate eating any food that's on the square
+    fn attack_square(
+        &mut self,
+        direction: Direction,
+        using_powerpill: bool,
+        map: &Map,
+        entities: &mut Grid<Option<EntityIndex>>,
+        food: &mut Grid<Option<Food>>,
+        mobs: &MobBucket,
+        players: &PlayerBucket,
+    ) {
+        let src = self.position();
+        if let Some(dest) = map.calc_foward(src.0, src.1, &direction) {
+            if map.base_tile(dest.0 as usize, dest.1 as usize) != &BaseTile::Land {
+                // You can only move onto land
+                return;
+            }
+
+            if let Some(entity_index) = &entities[dest.0 as usize][dest.1 as usize] {
+                match entity_index.entity_type() {
+                    EntityType::Player => {
+                        let mut enemy = players.get(entity_index.index()).unwrap().borrow_mut();
+
+                        // We're both looking at each other so we both die
+                        if enemy.direction().reverse() == direction {
+                            enemy.kill();
+                            self.kill();
+
+                            entities[src.0 as usize][src.1 as usize] = None;
+                            entities[dest.0 as usize][dest.1 as usize] = None;
+                            return;
+                        }
+
+                        if !enemy.is_invulnerable() {
+                            enemy.deal_damage(1);
+
+                            // If they don't die stay
+                            if !enemy.died() {
+                                return;
+                            }
+
+                            // Remove the dead enemy from the board
+                            entities[dest.0 as usize][dest.1 as usize] = None;
+                            // Get some points for killing an enemy
+                            self.score += 150;
+                        } else {
+                            // We can't attack them so we must stay
+                            return;
+                        }
+                    }
+                    EntityType::Mob => {
+                        if using_powerpill {
+                            let mut enemy = mobs.get(entity_index.index()).unwrap().borrow_mut();
+                            enemy.kill();
+                            entities[dest.0 as usize][dest.1 as usize] = None;
+                            self.score += 150;
+                            return;
+                        } else {
+                            self.kill();
+                            entities[src.0 as usize][src.1 as usize] = None;
+                            return;
+                        }
+                    }
+                }
+            }
+
+            if let Some(food_item) = food[dest.0 as usize][dest.1 as usize].clone() {
+                self.eat(food_item);
+                food[dest.0 as usize][dest.1 as usize] = None;
+            }
+
+            debug_assert!(
+                entities[dest.0 as usize][dest.1 as usize].is_none(),
+                "Tile we're moving into wasn't None"
+            );
+
+            debug_assert_ne!(
+                (dest.0, dest.1),
+                (src.0, src.1),
+                "Old and new positions were the same"
+            );
+
+            // Apply the movement:
+            entities.swap(
+                (dest.0 as usize, dest.1 as usize),
+                (src.0 as usize, src.1 as usize),
+            );
+            self.set_pos((dest.0, dest.1), true);
+        } else {
+            println!("Player tried to move forward off map");
         }
     }
 }
@@ -141,68 +243,23 @@ impl Entity for Player {
 
         // The default action if none is provided is stay
         let action = action.unwrap_or(Action::Stay);
-
-        let (cur_x, cur_y) = self.position();
         let direction = self.direction();
 
         match action {
             Action::Stay => return,
             Action::Forward => {
-                if let Some((new_x, new_y)) = map.calc_foward(cur_x, cur_y, &direction) {
-                    if map.base_tile(new_x as usize, new_y as usize) != &BaseTile::Land {
-                        // You can only move onto land
-                        return;
-                    }
-
-                    debug_assert_ne!(
-                        (new_x, new_y),
-                        (cur_x, cur_y),
-                        "Old and new positions were the same"
-                    );
-
-                    if let Some(entity_index) = &entities[new_x as usize][new_y as usize] {
-                        let mut enemy = entity_index.as_entity(mobs, players).borrow_mut();
-                        if !enemy.is_invulnerable() {
-                            enemy.deal_damage(1);
-
-                            // If they don't die stay
-                            if !enemy.died() {
-                                return;
-                            }
-
-                            // Remove the dead enemy from the board
-                            entities[new_x as usize][new_y as usize] = None;
-                            // Get some points for killing an enemy
-                            self.score += 100;
-                        } else {
-                            // We can't attack them so we must stay
-                            return;
-                        }
-                    }
-
-                    if let Some(food_item) = food[new_x as usize][new_y as usize].clone() {
-                        self.eat(food_item);
-                        food[new_x as usize][new_y as usize] = None;
-                    }
-
-                    debug_assert!(
-                        entities[new_x as usize][new_y as usize].is_none(),
-                        "Tile we're moving into wasn't None"
-                    );
-
-                    // Apply the movement:
-                    entities.swap(
-                        (cur_x as usize, cur_y as usize),
-                        (new_x as usize, new_y as usize),
-                    );
-                    self.set_pos((new_x, new_y), true);
-                } else {
-                    println!("Player tried to move forward off map");
-                }
+                self.attack_square(direction, false, map, entities, food, mobs, players);
             }
             Action::TurnRight => self.turn(self.direction().clockwise(), true),
             Action::TurnLeft => self.turn(self.direction().anti_clockwise(), true),
-            Action::Eat => todo!("Maybe remove this action / change to eat power pill"),
+            Action::Eat => {
+                if self.has_powerpill {
+                    self.has_powerpill = false;
+                    for _ in 0..2 {
+                        self.attack_square(direction, true, map, entities, food, mobs, players);
+                    }
+                }
+            }
         }
     }
 
