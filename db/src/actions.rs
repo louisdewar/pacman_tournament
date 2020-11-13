@@ -77,3 +77,9 @@ pub fn user_info(conn: &PgConnection, username: String) -> Option<User> {
         .optional()
         .expect("Couldn't get user info")
 }
+
+pub fn delete_user(conn: &PgConnection, username: String) {
+    diesel::delete(users::table.filter(users::columns::username.eq(username)))
+        .execute(conn)
+        .expect("Couldn't delete user");
+}

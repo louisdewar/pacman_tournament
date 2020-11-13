@@ -62,8 +62,30 @@ class Ai:
             'F' => Forward
             'R' => TurnRight
             'L' => TurnLeft
-            'E' => Eat
+            'E' => Eat powerpill (does a double move forward potentially killing ghosts and players
+                    - as long as the player isn't facing you)
             'S' => Stay
+
+            The current code loops around the local game grid and prints out the local view
+            you can delete this if you like although it may provide useful debugging information.
+            It also move around the map in a very inefficient way and is prone to get struck. It also currently
+            does no avoidance of players or ghosts. Your task is to improve that.
+
+            At each location in game[x][y] you can access the base tile (L = land, X = Wall)
+            using game[x][y]['base']. If there is food you can access it as game[x][y]['food']
+            and it will either be F for food or P for powerpill.
+            A player will have game[x][y]['player'] set with some extra metadata, same with ghosts except you
+            must index them using game[x][y]['mob'].
+
+            Since the current player is at x=1,y=2 you can view the information about the current player using
+            game[1][2]['player'].
+
+            Beaware: if you try to attack a player using either forward or eat powerpill, your enemy must face away from you
+            otherwise both players die (head on collision).
+
+            The game is processed each tick simulating all the mobs (ghosts) first and then all the players. The process order is
+            from top left to bottom right by going row by row. If you know your direction (game[1][2]['player']['direction'])
+            and the relative location of an enemy you can work out who will be allowed to move first.
         """
         print('----' * 3)
         for y in range(4):

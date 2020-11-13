@@ -35,6 +35,11 @@ fn main() {
 
             user_info(username);
         }
+        Some(("delete", matches)) => {
+            let username = matches.value_of("USERNAME").unwrap().to_owned();
+
+            delete_user(username);
+        }
         _ => {
             println!("Unknown command");
             app.print_long_help().unwrap();
@@ -45,6 +50,11 @@ fn main() {
 fn establish_connection() -> PgConnection {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     PgConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url))
+}
+
+fn delete_user(username: String) {
+    actions::delete_user(&establish_connection(), username.clone());
+    println!("Deleted {}", username);
 }
 
 fn list_users() {

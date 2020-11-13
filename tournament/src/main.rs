@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate diesel;
-#[macro_use]
 extern crate diesel_migrations;
 
 mod authentication;
@@ -26,10 +24,12 @@ embed_migrations!("../db/migrations/");
 
 #[tokio::main]
 async fn main() {
-    // TODO: add configuration for postgres db
-    let manager = ConnectionManager::<PgConnection>::new(
-        "postgres://ai_tournament:docker@localhost:2019/tournament",
-    );
+    let pg_addr = std::env::var("PG_ADDRESS")
+        .unwrap_or("postgres://ai_tournament:docker@localhost:2019/tournament".to_owned());
+
+    println!("Connecting to pg database using {}", pg_addr);
+
+    let manager = ConnectionManager::<PgConnection>::new(&pg_addr);
     let pool = r2d2::Pool::new(manager).unwrap();
 
     embedded_migrations::run_with_output(&pool.get().unwrap(), &mut std::io::stdout())

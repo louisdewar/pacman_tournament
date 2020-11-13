@@ -113,7 +113,7 @@ impl Spectator {
 
     fn handle_message(&mut self, msg: WebSocketMessage) {
         match msg {
-            WebSocketMessage::Text(_txt) => todo!(),
+            WebSocketMessage::Text(_txt) => {}
             // We don't care about other message types
             _ => {}
         }

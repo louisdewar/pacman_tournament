@@ -32,3 +32,11 @@ subcommands:
             takes_value: true
             required: true
             index: 1
+  - delete:
+      about: Delete a user from the database
+      args:
+        - USERNAME:
+            about: The user whom you are about to delete
+            takes_value: true
+            required: true
+            index: 1
