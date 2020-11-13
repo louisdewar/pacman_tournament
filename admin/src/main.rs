@@ -27,6 +27,14 @@ fn main() {
 
             print_leaderboard(limit);
         }
+        Some(("list", _)) => {
+            list_users();
+        }
+        Some(("info", matches)) => {
+            let username = matches.value_of("USERNAME").unwrap().to_owned();
+
+            user_info(username);
+        }
         _ => {
             println!("Unknown command");
             app.print_long_help().unwrap();
@@ -34,9 +42,36 @@ fn main() {
     }
 }
 
-pub fn establish_connection() -> PgConnection {
+fn establish_connection() -> PgConnection {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     PgConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url))
+}
+
+fn list_users() {
+    let users = actions::list_users(&establish_connection());
+    eprintln!("ID USERNAME CODE ENABLED");
+
+    for user in users {
+        println!(
+            "{} {} {} {}",
+            user.id, user.username, user.code, user.enabled
+        );
+    }
+}
+
+fn user_info(username: String) {
+    let user = if let Some(user) = actions::user_info(&establish_connection(), username) {
+        user
+    } else {
+        eprintln!("User doesn't exist");
+        return;
+    };
+
+    eprintln!("ID USERNAME CODE ENABLED");
+    println!(
+        "{} {} {} {}",
+        user.id, user.username, user.code, user.enabled
+    );
 }
 
 fn register_user(username: String, enabled: bool) {

@@ -65,3 +65,15 @@ pub fn get_leaderboard(conn: &PgConnection, limit: Option<i64>) -> Vec<Leaderboa
     }
     .expect("Failed to get leaderboard")
 }
+
+pub fn list_users(conn: &PgConnection) -> Vec<User> {
+    users::table.get_results(conn).expect("Couldn't get users")
+}
+
+pub fn user_info(conn: &PgConnection, username: String) -> Option<User> {
+    users::table
+        .filter(users::columns::username.eq(username))
+        .first(conn)
+        .optional()
+        .expect("Couldn't get user info")
+}

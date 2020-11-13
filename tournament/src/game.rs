@@ -126,7 +126,7 @@ impl GlobalManager {
                 ingame_players: Default::default(),
                 spawning_players: Default::default(),
                 games: Default::default(),
-                tick_interval: interval(Duration::from_millis(500)),
+                tick_interval: interval(Duration::from_millis(1000)),
                 rx,
                 competitor_tx,
                 score_tx,

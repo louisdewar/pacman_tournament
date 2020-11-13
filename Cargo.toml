@@ -1,3 +1,6 @@
 [workspace]
 
 members = ["model", "tournament", "db", "admin"]
+
+[profile.release]
+lto = true

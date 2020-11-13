@@ -65,8 +65,24 @@ class Ai:
             'E' => Eat
             'S' => Stay
         """
+        current_player = game[1][2]['player']
+        current_direction = current_player['direction']
+
+        reverse_map = {
+            'N': 'S',
+            'E': 'W',
+            'S': 'N',
+            'W': 'E',
+        }
+
+        reverse = reverse_map[current_direction]
+
         if game[1][1]['base'] != 'L':
             return 'R'
+
+        enemy_player = game[1][1]['player']
+        if enemy_player and enemy_player['direction'] == reverse:
+            return 'F'
 
         if not game[1][1]['player']:
             return 'F';
